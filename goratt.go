@@ -23,6 +23,8 @@ import (
 
 var validTags []uint64
 
+var client mqtt.Client
+
 type RattConfig struct {
    CACert string `yaml:"CACert"`
    ClientCert string `yaml:"ClientCert"`
@@ -81,7 +83,7 @@ func GetACLList() {
 	}
 
 	// Create an HTTP client with the custom transport
-	client := &http.Client{Transport: transport}
+	httpClient := &http.Client{Transport: transport}
 
 	// Specify the URL you want to make a request to
 	url := fmt.Sprintf("%s/api/v1/resources/%s/acl",cfg.ApiURL,cfg.Resource)
@@ -98,7 +100,7 @@ func GetACLList() {
 	req.Header.Add("Authorization", "Basic "+auth)
 
 	// Make the request
-	response, err := client.Do(req)
+	response, err := httpClient.Do(req)
 	if err != nil {
 		fmt.Println("Error making request: ", err)
 		return
@@ -153,6 +155,12 @@ func GetACLList() {
 	}
 
 
+	// Signal we were updated
+
+	var topic string = fmt.Sprintf("ratt/status/node/%s/acl/update",cfg.ClientID)
+	var message string = "{\"status\":\"downloaded\"}"
+	client.Publish(topic,0,false,message)
+
 }
 
 func onMessageReceived(client mqtt.Client, message mqtt.Message) {
@@ -169,7 +177,7 @@ func onMessageReceived(client mqtt.Client, message mqtt.Message) {
 // This tag number tried to badge in
 func BadgeTag(id uint64) {
 	var found bool = false
-	for index,value := range validTags {
+	for _,value := range validTags {
 		if id == value {
 			found = true
 			break
@@ -226,7 +234,6 @@ func main() {
 	}
 
 
-	GetACLList()
 
 	// MQTT broker address
 	broker := fmt.Sprintf("ssl://%s:%d",cfg.MqttHost,cfg.MqttPort)
@@ -267,7 +274,7 @@ func main() {
 		SetDefaultPublishHandler(onMessageReceived)
 
 	// Create an MQTT client
-	client := mqtt.NewClient(opts)
+	client = mqtt.NewClient(opts)
 
 	// Connect to the MQTT broker
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
@@ -279,6 +286,7 @@ func main() {
 		log.Fatal("MQTT Subscribe error: ",token.Error())
 	}
 
+	GetACLList()
 	go NFClistener()
 	fmt.Printf("Connected to %s\n", broker)
 
