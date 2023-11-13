@@ -13,7 +13,7 @@ import (
 	"sync"
 	"gopkg.in/yaml.v2"
 	"encoding/json"
-	//"time"
+	"time"
 
 	"github.com/eclipse/paho.mqtt.golang"
 
@@ -21,7 +21,6 @@ import (
 	"net/http"
 )
 
-var validTags []uint64
 
 var client mqtt.Client
 
@@ -42,6 +41,15 @@ type RattConfig struct {
 
    NFCdevice string `yaml:"NFCdevice"`
 }
+
+// In-memory ACL list
+type ACLlist struct {
+	Tag uint64
+	Level  int
+	Member string
+}
+
+var validTags []ACLlist
 
 var cfg RattConfig
 // From API - off the wire
@@ -134,9 +142,13 @@ func GetACLList() {
 
 			number, err := strconv.ParseUint(item.Raw_tag_id,10,64)
 			if err == nil {
-				validTags = append(validTags,number)
+				validTags = append(validTags, ACLlist{
+					Tag: number,
+					Level: item.Level,
+					Member: item.Member,
+				})
 			}
-			_, err = file.WriteString(item.Raw_tag_id + "\n") // Add a newline after each string
+			_, err = file.WriteString(fmt.Sprintf("%d %d %s\n",number,item.Level,item.Member))
 			if err != nil {
 			    fmt.Println("Error writing to tag file: ", err)
 			    file.Close()
@@ -163,6 +175,40 @@ func GetACLList() {
 
 }
 
+func ReadTagFile() {
+	aclfileMutex.Lock()
+	defer aclfileMutex.Unlock()
+
+	file,err := os.Open(cfg.TagFile)
+	if (err != nil) {
+		log.Fatal("Error Reading Tag File: ",err)
+		return
+	}
+	defer file.Close()
+
+	// Create a bufio.Scanner to read lines from the file
+	scanner := bufio.NewScanner(file)
+
+	// Loop through each line
+	var tag uint64
+	var level int
+	var member string
+
+	validTags = validTags[:0]
+	for scanner.Scan() {
+		line := scanner.Text()
+		_, err := fmt.Sscanf(line, "%d %d %s",&tag,&level,&member)
+		if err == nil {
+				validTags = append(validTags, ACLlist{
+					Tag: tag,
+					Level: level,
+					Member: member,
+			})
+		}
+	}
+
+}
+
 func onMessageReceived(client mqtt.Client, message mqtt.Message) {
 	fmt.Printf("Received message on topic: %s\n", message.Topic())
 	fmt.Printf("Message: %s\n", message.Payload())
@@ -173,14 +219,28 @@ func onMessageReceived(client mqtt.Client, message mqtt.Message) {
 	}
 }
 
+func PingSender() {
+
+	for {
+		var topic string = fmt.Sprintf("ratt/status/node/%s/ping",cfg.ClientID)
+		var message string = "{\"status\":\"ok\"}"
+		client.Publish(topic,0,false,message)
+		time.Sleep(120 * time.Second)
+	}
+}
 
 // This tag number tried to badge in
 func BadgeTag(id uint64) {
 	var found bool = false
-	for _,value := range validTags {
-		if id == value {
+	for _,tag := range validTags {
+		if id == tag.Tag {
 			found = true
-			break
+		fmt.Println("Tag allowed",id)
+
+		var topic string = fmt.Sprintf("ratt/status/node/%s/personality/access/door_access",cfg.ClientID)
+		var message string = fmt.Sprintf("{\"allowed\":true,\"member\":\"%s\"}",tag.Member)
+		client.Publish(topic,0,false,message)
+			return
 		} 
 
 	}
@@ -189,7 +249,6 @@ func BadgeTag(id uint64) {
 		fmt.Println("Tag disallowed",id)
 		return
 	}
-	fmt.Println("Tag allowed",id)
 }
 
 func NFClistener() {
@@ -286,8 +345,10 @@ func main() {
 		log.Fatal("MQTT Subscribe error: ",token.Error())
 	}
 
+	ReadTagFile()
 	GetACLList()
 	go NFClistener()
+	go PingSender()
 	fmt.Printf("Connected to %s\n", broker)
 
 	// Wait for a signal to exit
