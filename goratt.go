@@ -7,7 +7,7 @@ import (
 	"os"
 	"strconv"
 	"bufio"
-	"os/signal"
+	// "os/signal"
 	"crypto/x509"
 	"io/ioutil"
 	"sync"
@@ -19,6 +19,9 @@ import (
 
 	"encoding/base64"
 	"net/http"
+
+	"github.com/tarm/serial"
+	"bytes"
 )
 
 
@@ -251,7 +254,98 @@ func BadgeTag(id uint64) {
 	}
 }
 
+// THis reads from the weird USB RFID Serial Protocol
+func readrfid() uint64  {
+      // Open the serial port
+    //mode := &serial.Mode{
+    //  BaudRate: 115200,
+   // }
+    //port, err := serial.Open(cfg.NFCdevice,mode)
+		c := &serial.Config{Name: cfg.NFCdevice, Baud: 115200, ReadTimeout: time.Second}
+    port, err := serial.OpenPort(c)
+    if err != nil {
+			panic(fmt.Errorf("Canot open tty %s: %v",cfg.NFCdevice,err))
+    }
+    buff := make([]byte, 9)
+    for {
+			fmt.Printf("READING")
+    	n, err := port.Read(buff)
+			fmt.Printf("READ EXIT")
+      if err != nil {
+        log.Fatal(err)
+			fmt.Printf("Fatalbreak")
+        break
+      }
+      if n == 0 {
+        fmt.Println("\nEOF SLEEP")
+				time.Sleep(time.Second * 5)
+        fmt.Println("\nENDSLEEP")
+        continue
+      }
+      if n != 9 {
+        fmt.Println("\nPARTIAL")
+       continue
+      }
+      fmt.Printf("%x", string(buff[:n]))
+      break
+    }
+
+			fmt.Printf("\nGotdata\n")
+
+        // Define the preambles and terminator
+    preambles := []byte{0x02, 0x09}
+    terminator := []byte{0x03}
+
+
+    // Verify the preambles
+    if !bytes.Equal(buff[0:2], preambles) {
+      //panic(fmt.Errorf("invalid preambles: %v", buff[0:2]))
+			return 0
+    }
+
+    // Verify the terminator
+    if !bytes.Equal(buff[8:9], terminator) {
+      //panic(fmt.Errorf("invalid terminator: %v", buff[8:9]))
+			return 0
+    }
+
+
+    // Print the data
+    fmt.Println(buff)
+    data := buff[1:7]
+    // XOR all the bytes in the slice
+    xor := data[0]
+    for i := 1; i < len(data); i++ {
+        xor ^= data[i]
+        fmt.Printf("Byte %d is %x\n",i,data[i])
+    }
+
+    var tagno uint64
+    tagno= (uint64(data[2]) << 24) | (uint64(data[3])<<16) | (uint64(data[4]) <<8 ) | uint64(data[5])
+    //fmt.Printf("XOR is %x should be %x Tagno %d\n",xor,buff[7],tagno)
+    if xor!= buff[7] {
+      return 0
+    }
+
+    return tagno
+
+}
+
 func NFClistener() {
+	for {
+	//tag := readrfid()
+	var tag uint64 
+	tag = 0
+	time.Sleep(time.Second * 3)
+	if (tag !=  0) {
+		fmt.Println("Got RFID",tag)
+		BadgeTag(tag)
+	}
+}
+}
+
+// This reads regular numbers from the device
+func OLD_NFClistener() {
 
 	file,err := os.Open(cfg.NFCdevice)
 	if (err != nil) {
@@ -353,9 +447,11 @@ func main() {
 
 	// Wait for a signal to exit
 	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
+	//signal.Notify(c, os.Interrupt)
+	fmt.Println("Waitsignal")
 	<-c
 
+	fmt.Println("GOtsignal")
 	// Disconnect from the MQTT broker
 	client.Disconnect(250)
 	fmt.Println("Disconnected from the MQTT broker")
