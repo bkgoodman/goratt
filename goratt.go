@@ -14,6 +14,7 @@ import (
 	"gopkg.in/yaml.v2"
 	"encoding/json"
 	"time"
+  "strings"
 
 	"github.com/eclipse/paho.mqtt.golang"
 
@@ -240,8 +241,9 @@ func BadgeTag(id uint64) {
 			found = true
 		fmt.Println("Tag allowed",id)
 
-		var topic string = fmt.Sprintf("ratt/status/node/%s/personality/access/door_access",cfg.ClientID)
+		var topic string = fmt.Sprintf("ratt/status/node/%s/personality/access/storagepass",cfg.ClientID)
 		var message string = fmt.Sprintf("{\"allowed\":true,\"member\":\"%s\"}",tag.Member)
+    dymo_label(strings.Replace(tag.Member,"."," ",-1))
 		client.Publish(topic,0,false,message)
 			return
 		} 
@@ -268,12 +270,12 @@ func readrfid() uint64  {
     }
     buff := make([]byte, 9)
     for {
-			fmt.Printf("READING")
+			fmt.Println("READING")
     	n, err := port.Read(buff)
-			fmt.Printf("READ EXIT")
+			fmt.Println("READ EXIT")
       if err != nil {
-        log.Fatal(err)
-			fmt.Printf("Fatalbreak")
+			  fmt.Printf("Fatalbreak %v\n",err)
+        //log.Fatal(err)
         break
       }
       if n == 0 {
@@ -333,10 +335,10 @@ func readrfid() uint64  {
 
 func NFClistener() {
 	for {
-	//tag := readrfid()
-	var tag uint64 
-	tag = 0
-	time.Sleep(time.Second * 3)
+	tag := readrfid()
+	//var tag uint64 
+	//tag = 0
+	//time.Sleep(time.Second * 3)
 	if (tag !=  0) {
 		fmt.Println("Got RFID",tag)
 		BadgeTag(tag)
@@ -385,6 +387,9 @@ func main() {
 	if (err != nil) {
 	    log.Fatal("Config Decode error: ",err)
 	}
+
+  // REMOVE
+  //NFClistener()
 
 
 
