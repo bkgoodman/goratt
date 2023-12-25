@@ -1,0 +1,14 @@
+[Unit]
+Description=Storage Label Printer
+After=multi-user.target
+
+[Service]
+WorkingDirectory=/home/bkg/goratt
+Type=idle
+User=root
+Restart=always
+ExecStart=/home/bkg/goratt/goratt
+RestartSec=15s
+
+[Install]
+WantedBy=multi-user.target

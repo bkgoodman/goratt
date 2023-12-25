@@ -7,7 +7,7 @@ import (
 	"os"
 	"strconv"
 	"bufio"
-	// "os/signal"
+	 "os/signal"
 	"crypto/x509"
 	"io/ioutil"
 	"sync"
@@ -141,7 +141,8 @@ func GetACLList() {
 	validTags = validTags[:0]
 	// Print the desired field (e.g., "name") from each dictionary
 	for index, item := range items {
-		fmt.Println("ID:", index,item.Tagid,item.Raw_tag_id)
+		_ = index
+		//fmt.Println("ID:", index,item.Tagid,item.Raw_tag_id)
 		if (item.Allowed == "allowed") {
 
 			number, err := strconv.ParseUint(item.Raw_tag_id,10,64)
@@ -214,11 +215,12 @@ func ReadTagFile() {
 }
 
 func onMessageReceived(client mqtt.Client, message mqtt.Message) {
-	fmt.Printf("Received message on topic: %s\n", message.Topic())
-	fmt.Printf("Message: %s\n", message.Payload())
+	//fmt.Printf("Received message on topic: %s\n", message.Topic())
+	//fmt.Printf("Message: %s\n", message.Payload())
 
 	// Is this aun update ACL message? If so - Update
 	if (message.Topic() == "ratt/control/broadcast/acl/update") {
+		fmt.Println("Got ACL Update message")
 		GetACLList()
 	}
 }
@@ -239,7 +241,7 @@ func BadgeTag(id uint64) {
 	for _,tag := range validTags {
 		if id == tag.Tag {
 			found = true
-		fmt.Println("Tag allowed",id)
+		fmt.Printf("Tag %d Member %s",id,tag.Member)
 
 		var topic string = fmt.Sprintf("ratt/status/node/%s/personality/storagepass",cfg.ClientID)
 		var message string = fmt.Sprintf("{\"allowed\":true,\"member\":\"%s\"}",tag.Member)
@@ -288,7 +290,7 @@ func readrfid() uint64  {
         //fmt.Println("\nPARTIAL")
        continue
       }
-      fmt.Printf("%x", string(buff[:n]))
+      //fmt.Printf("%x", string(buff[:n]))
       break
     }
 
@@ -313,13 +315,13 @@ func readrfid() uint64  {
 
 
     // Print the data
-    fmt.Println(buff)
+    //fmt.Println(buff)
     data := buff[1:7]
     // XOR all the bytes in the slice
     xor := data[0]
     for i := 1; i < len(data); i++ {
         xor ^= data[i]
-        fmt.Printf("Byte %d is %x\n",i,data[i])
+        //fmt.Printf("Byte %d is %x\n",i,data[i])
     }
 
     var tagno uint64
@@ -452,11 +454,11 @@ func main() {
 
 	// Wait for a signal to exit
 	c := make(chan os.Signal, 1)
-	//signal.Notify(c, os.Interrupt)
-	fmt.Println("Waitsignal")
+	signal.Notify(c, os.Interrupt)
+	//fmt.Println("Waitsignal")
 	<-c
 
-	fmt.Println("GOtsignal")
+	fmt.Println("Got Terminate Signal")
 	// Disconnect from the MQTT broker
 	client.Disconnect(250)
 	fmt.Println("Disconnected from the MQTT broker")
