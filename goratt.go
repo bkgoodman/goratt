@@ -241,7 +241,7 @@ func BadgeTag(id uint64) {
 			found = true
 		fmt.Println("Tag allowed",id)
 
-		var topic string = fmt.Sprintf("ratt/status/node/%s/personality/access/storagepass",cfg.ClientID)
+		var topic string = fmt.Sprintf("ratt/status/node/%s/personality/storagepass",cfg.ClientID)
 		var message string = fmt.Sprintf("{\"allowed\":true,\"member\":\"%s\"}",tag.Member)
     dymo_label(strings.Replace(tag.Member,"."," ",-1))
 		client.Publish(topic,0,false,message)
@@ -270,29 +270,29 @@ func readrfid() uint64  {
     }
     buff := make([]byte, 9)
     for {
-			fmt.Println("READING")
+			//fmt.Println("READING")
     	n, err := port.Read(buff)
-			fmt.Println("READ EXIT")
+			//fmt.Println("READ EXIT")
       if err != nil {
-			  fmt.Printf("Fatalbreak %v\n",err)
+			  //fmt.Printf("Fatalbreak %v\n",err)
         //log.Fatal(err)
         break
       }
       if n == 0 {
-        fmt.Println("\nEOF SLEEP")
+        //fmt.Println("\nEOF SLEEP")
 				time.Sleep(time.Second * 5)
-        fmt.Println("\nENDSLEEP")
+        //fmt.Println("\nENDSLEEP")
         continue
       }
       if n != 9 {
-        fmt.Println("\nPARTIAL")
+        //fmt.Println("\nPARTIAL")
        continue
       }
       fmt.Printf("%x", string(buff[:n]))
       break
     }
 
-			fmt.Printf("\nGotdata\n")
+			// fmt.Printf("\nGotdata\n")
 
         // Define the preambles and terminator
     preambles := []byte{0x02, 0x09}
