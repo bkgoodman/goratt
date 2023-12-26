@@ -14,7 +14,7 @@ import (
 	"gopkg.in/yaml.v2"
 	"encoding/json"
 	"time"
-  "strings"
+  	// "strings" 
 
 	"github.com/eclipse/paho.mqtt.golang"
 
@@ -241,12 +241,12 @@ func BadgeTag(id uint64) {
 	for _,tag := range validTags {
 		if id == tag.Tag {
 			found = true
-		fmt.Printf("Tag %d Member %s",id,tag.Member)
+			fmt.Printf("Tag %d Member %s",id,tag.Member)
 
-		var topic string = fmt.Sprintf("ratt/status/node/%s/personality/storagepass",cfg.ClientID)
-		var message string = fmt.Sprintf("{\"allowed\":true,\"member\":\"%s\"}",tag.Member)
-    dymo_label(strings.Replace(tag.Member,"."," ",-1))
-		client.Publish(topic,0,false,message)
+			var topic string = fmt.Sprintf("ratt/status/node/%s/personality/access",cfg.ClientID)
+			var message string = fmt.Sprintf("{\"allowed\":true,\"member\":\"%s\"}",tag.Member)
+			client.Publish(topic,0,false,message)
+			open_servo()
 			return
 		} 
 
@@ -383,6 +383,7 @@ func OLD_NFClistener() {
 }
 
 func main() {
+	servo_reset()
 	f, err := os.Open("goratt.cfg")
 	decoder := yaml.NewDecoder(f)
 	err = decoder.Decode(&cfg)
