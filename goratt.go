@@ -42,6 +42,9 @@ type RattConfig struct {
    Resource string `yaml:"Resource"`
 
    TagFile string `yaml:"TagFile"`
+   ServoClose int `yaml:"ServoClose,default=1000"`
+   ServoOpen int `yaml:"ServoOpen,default=1700"`
+   WaitSecs int `yaml:"WaitSecs,default=5"`
 
    NFCdevice string `yaml:"NFCdevice"`
 }
@@ -246,7 +249,7 @@ func BadgeTag(id uint64) {
 			var topic string = fmt.Sprintf("ratt/status/node/%s/personality/access",cfg.ClientID)
 			var message string = fmt.Sprintf("{\"allowed\":true,\"member\":\"%s\"}",tag.Member)
 			client.Publish(topic,0,false,message)
-			open_servo()
+			open_servo(cfg.ServoOpen, cfg.ServoClose, cfg.WaitSecs)
 			return
 		} 
 

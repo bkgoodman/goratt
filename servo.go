@@ -32,7 +32,16 @@ func servo_reset() {
 }
 
 
-func open_servo() {
+func servoFromTo(hw govattu.Vattu, from int, to int) {
+  inc := 1
+  if (to < from) { inc -= 1 }
+	for i := from; i != to; i += inc  {
+		hw.Pwm0Set(uint32(i))  // Set pwm
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func open_servo(servoOpen int, servoClose int, waitSecs int) {
 	hw, err := govattu.Open()
 	if err != nil {
 		panic(err)
@@ -44,18 +53,14 @@ func open_servo() {
 	hw.Pwm0SetRange(20000)  // SET RANGE to get 1ms - 2ms pulse width
 
 	hw.Pwm0Set(uint32(1000))  // Set pwm
-	fmt.Println("Servo Start.")
-	for i := SERVO_END; i > SERVO_START; i -= 10 {
-		hw.Pwm0Set(uint32(i))  // Set pwm
-		time.Sleep(10 * time.Millisecond)
-	}
+	fmt.Println("Servo Opening.")
+  servoFromTo(hw,servoClose,servoOpen)
 
-	time.Sleep(5 * time.Second)
+	fmt.Println("Servo Pausing.")
+	time.Sleep(time.Duration(waitSecs) * time.Second)
 
-	for i := SERVO_START; i <= SERVO_END; i += 10 {
-		hw.Pwm0Set(uint32(i))  // Set pwm
-		time.Sleep(10 * time.Millisecond)
-	}
+	fmt.Println("Servo Closing.")
+  servoFromTo(hw,servoOpen,servoClose)
 
 
 	fmt.Println("Servo End.")
