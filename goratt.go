@@ -386,7 +386,6 @@ func OLD_NFClistener() {
 }
 
 func main() {
-	servo_reset()
 	f, err := os.Open("goratt.cfg")
 	decoder := yaml.NewDecoder(f)
 	err = decoder.Decode(&cfg)
@@ -394,6 +393,7 @@ func main() {
 	    log.Fatal("Config Decode error: ",err)
 	}
 
+	servo_reset(cfg.ServoClose)
   // REMOVE
   //NFClistener()
 
