@@ -42,9 +42,9 @@ type RattConfig struct {
    Resource string `yaml:"Resource"`
 
    TagFile string `yaml:"TagFile"`
-   ServoClose int `yaml:"ServoClose,default=1000"`
-   ServoOpen int `yaml:"ServoOpen,default=1700"`
-   WaitSecs int `yaml:"WaitSecs,default=5"`
+   ServoClose int `yaml:"ServoClose"`
+   ServoOpen int `yaml:"ServoOpen"`
+   WaitSecs int `yaml:"WaitSecs"`
 
    NFCdevice string `yaml:"NFCdevice"`
 }
