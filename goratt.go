@@ -13,6 +13,7 @@ import (
 	"sync"
 	"gopkg.in/yaml.v2"
 	"encoding/json"
+  "github.com/hjkoskel/govattu"
 	"time"
   	// "strings" 
 
@@ -256,7 +257,15 @@ func BadgeTag(id uint64) {
 	}
 
 	if (found == false) {
+		hw, err := govattu.Open()
+		if err != nil {
+			panic(err)
+		}
+		defer  hw.Close()
 		fmt.Println("Tag disallowed",id)
+		hw.PinSet(23)
+		time.Sleep(time.Duration(3) * time.Second)
+		hw.PinClear(23)
 		return
 	}
 }

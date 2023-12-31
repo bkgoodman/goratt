@@ -52,13 +52,18 @@ func open_servo(servoOpen int, servoClose int, waitSecs int) {
 	hw.Pwm0SetRange(20000)  // SET RANGE to get 1ms - 2ms pulse width
 
 	fmt.Println("Servo Opening XX.")
+	hw.PinSet(25)
   servoFromTo(hw,servoClose,servoOpen)
-
+	hw.PinClear(25)
 	fmt.Println("Servo Pausing.")
+	hw.PinSet(24)
 	time.Sleep(time.Duration(waitSecs) * time.Second)
+	hw.PinClear(24)
+	hw.PinSet(25)
 
 	fmt.Println("Servo Closing.")
   servoFromTo(hw,servoOpen,servoClose)
+	hw.PinClear(25)
 
 
 	fmt.Println("Servo End.")
