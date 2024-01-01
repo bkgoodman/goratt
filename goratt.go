@@ -452,6 +452,7 @@ func main() {
 	go PingSender()
 	fmt.Printf("Connected to %s\n", broker)
 
+  dymo_label("- Ready -")
 	// Wait for a signal to exit
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
