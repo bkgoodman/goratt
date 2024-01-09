@@ -18,6 +18,7 @@ import (
 
 	"github.com/eclipse/paho.mqtt.golang"
 
+	"github.com/hjkoskel/govattu"
 	"encoding/base64"
 	"net/http"
 
@@ -382,6 +383,7 @@ func OLD_NFClistener() {
 
 }
 
+
 func main() {
 	f, err := os.Open("goratt.cfg")
 	decoder := yaml.NewDecoder(f)
@@ -390,8 +392,20 @@ func main() {
 	    log.Fatal("Config Decode error: ",err)
 	}
 
-  // REMOVE
-  //NFClistener()
+    NFClistener()
+    hw, err := govattu.Open()
+    if err != nil {
+      panic(err)
+    }
+		hw.PinMode(23,govattu.ALToutput)
+		hw.PinMode(24,govattu.ALToutput)
+		hw.PinMode(25,govattu.ALTinput)
+		hw.PinMode(18,govattu.ALTinput)
+		hw.PinSet(23)
+		hw.PinSet(24)
+		hw.ZeroPinEventDetectMask()
+
+    defer hw.Close()
 
 
 
