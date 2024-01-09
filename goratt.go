@@ -55,6 +55,7 @@ type ACLlist struct {
 	Tag uint64
 	Level  int
 	Member string
+	Allowed bool
 }
 
 var validTags []ACLlist
@@ -147,7 +148,6 @@ func GetACLList() {
 	for index, item := range items {
 		_ = index
 		//fmt.Println("ID:", index,item.Tagid,item.Raw_tag_id)
-		if (item.Allowed == "allowed") {
 
 			number, err := strconv.ParseUint(item.Raw_tag_id,10,64)
 			if err == nil {
@@ -155,15 +155,19 @@ func GetACLList() {
 					Tag: number,
 					Level: item.Level,
 					Member: item.Member,
+					Allowed: (item.Allowed == "allowed"),
 				})
 			}
-			_, err = file.WriteString(fmt.Sprintf("%d %d %s\n",number,item.Level,item.Member))
+			access := "denied"
+			if item.Allowed == "allowed" {
+				access = "allowed"
+			} 
+			_, err = file.WriteString(fmt.Sprintf("%d %s %d %s\n",number,access,item.Level,item.Member))
 			if err != nil {
 			    fmt.Println("Error writing to tag file: ", err)
 			    file.Close()
 			    return
 			}
-		}
 	}
 
 	file.Close()
@@ -202,16 +206,18 @@ func ReadTagFile() {
 	var tag uint64
 	var level int
 	var member string
+	var access string
 
 	validTags = validTags[:0]
 	for scanner.Scan() {
 		line := scanner.Text()
-		_, err := fmt.Sscanf(line, "%d %d %s",&tag,&level,&member)
+		_, err := fmt.Sscanf(line, "%d %s %d %s",&tag,&access,&level,&member)
 		if err == nil {
 				validTags = append(validTags, ACLlist{
 					Tag: tag,
 					Level: level,
 					Member: member,
+					Allowed: (access == "allowed"),
 			})
 		}
 	}
@@ -245,12 +251,17 @@ func BadgeTag(id uint64) {
 	for _,tag := range validTags {
 		if id == tag.Tag {
 			found = true
-			fmt.Printf("Tag %d Member %s",id,tag.Member)
+			access := "Denied"
+			if (tag.Allowed) { access = "Allowed" }
+			fmt.Printf("Tag %d Member %s Access %s",id,tag.Member,access)
 
 			var topic string = fmt.Sprintf("ratt/status/node/%s/personality/access",cfg.ClientID)
-			var message string = fmt.Sprintf("{\"allowed\":true,\"member\":\"%s\"}",tag.Member)
+			var message string = fmt.Sprintf("{\"allowed\":tag.Allowed,\"member\":\"%s\"}",tag.Member)
 			client.Publish(topic,0,false,message)
-			open_servo(cfg.ServoOpen, cfg.ServoClose, cfg.WaitSecs)
+
+			if (tag.Allowed) {
+				open_servo(cfg.ServoOpen, cfg.ServoClose, cfg.WaitSecs)
+			}
 			return
 		} 
 
@@ -443,6 +454,7 @@ func main() {
 	opts := mqtt.NewClientOptions().
 		AddBroker(broker).
 		SetClientID(clientID).
+		SetAutoReconnect(true).
 		SetTLSConfig(tlsConfig).
 		SetDefaultPublishHandler(onMessageReceived)
 
