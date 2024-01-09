@@ -261,24 +261,24 @@ func BadgeTag(id uint64) {
 
 			if (tag.Allowed) {
 				open_servo(cfg.ServoOpen, cfg.ServoClose, cfg.WaitSecs)
+			  return
 			}
-			return
 		} 
 
 	}
 
 	if (found == false) {
-		hw, err := govattu.Open()
-		if err != nil {
-			panic(err)
-		}
-		defer  hw.Close()
-		fmt.Println("Tag disallowed",id)
-		hw.PinSet(23)
-		time.Sleep(time.Duration(3) * time.Second)
-		hw.PinClear(23)
-		return
+		fmt.Println("Tag not found",id)
 	}
+	hw, err := govattu.Open()
+	if err != nil {
+		panic(err)
+	}
+	defer  hw.Close()
+	hw.PinSet(23)
+	time.Sleep(time.Duration(3) * time.Second)
+	hw.PinClear(23)
+	return
 }
 
 // THis reads from the weird USB RFID Serial Protocol
@@ -417,6 +417,18 @@ func main() {
   // REMOVE
   //NFClistener()
 
+    hw, err := govattu.Open()
+    if err != nil {
+      panic(err)
+    }
+		// 18 is SERVO!
+		hw.PinMode(23,govattu.ALToutput)
+		hw.PinMode(24,govattu.ALToutput)
+		hw.PinMode(25,govattu.ALToutput)
+		hw.PinSet(23)
+		hw.PinSet(24)
+		hw.PinSet(25)
+		hw.ZeroPinEventDetectMask()
 
 
 	// MQTT broker address
@@ -473,6 +485,12 @@ func main() {
 
 	ReadTagFile()
 	GetACLList()
+
+	hw.PinClear(23)
+	hw.PinClear(24)
+	hw.PinClear(25)
+	hw.Close()
+
 	go NFClistener()
 	go PingSender()
 	fmt.Printf("Connected to %s\n", broker)
