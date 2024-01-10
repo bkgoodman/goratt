@@ -12,6 +12,7 @@ import (
 	"io/ioutil"
 	"sync"
 	"gopkg.in/yaml.v2"
+	"flag"
 	"encoding/json"
   "github.com/hjkoskel/govattu"
 	"time"
@@ -406,12 +407,17 @@ func OLD_NFClistener() {
 }
 
 func main() {
-	f, err := os.Open("goratt.cfg")
+	openflag := flag.Bool("holdopen",false,"Hold door open indefinitley")
+	cfgfile := flag.String("cfg","goratt.cfg","Config file")
+	flag.Parse()
+
+	f, err := os.Open(*cfgfile)
 	decoder := yaml.NewDecoder(f)
 	err = decoder.Decode(&cfg)
 	if (err != nil) {
 	    log.Fatal("Config Decode error: ",err)
 	}
+
 
 	servo_reset(cfg.ServoClose)
   // REMOVE
@@ -429,6 +435,10 @@ func main() {
 		hw.PinSet(24)
 		hw.PinSet(25)
 		hw.ZeroPinEventDetectMask()
+
+		if (*openflag) {
+				open_servo(cfg.ServoOpen, cfg.ServoClose, cfg.WaitSecs)
+		}
 
 
 	// MQTT broker address

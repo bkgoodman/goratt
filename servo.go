@@ -40,6 +40,27 @@ func servoFromTo(hw govattu.Vattu, from int, to int) {
 	}
 }
 
+func servo_holdopen(servoOpen int, servoClose int, waitSecs int) {
+	hw, err := govattu.Open()
+	if err != nil {
+		panic(err)
+	}
+
+	hw.PinMode(SERVO_PIN, govattu.ALT5)  // ALT5 function for 18 is PWM0
+	hw.PwmSetMode(true, true, false, false)  // PwmSetMode(en0 bool, ms0 bool, en1 bool, ms1 bool) enable and set to mark-space mode for pwm0 and pwm1
+	hw.PwmSetClock(19)  // Set clock divisor to get 50Hz frequency
+	hw.Pwm0SetRange(20000)  // SET RANGE to get 1ms - 2ms pulse width
+
+	fmt.Println("Servo Opening XX.")
+	hw.PinSet(25)
+  servoFromTo(hw,servoClose,servoOpen)
+	hw.PinClear(25)
+	fmt.Println("Servo Pausing.")
+	hw.PinSet(24)
+	for {
+		time.Sleep(time.Duration(waitSecs) * time.Second)
+	}
+}
 func open_servo(servoOpen int, servoClose int, waitSecs int) {
 	hw, err := govattu.Open()
 	if err != nil {
