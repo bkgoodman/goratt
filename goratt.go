@@ -42,6 +42,7 @@ type RattConfig struct {
    ApiUsername string `yaml:"ApiUsername"`
    ApiPassword string `yaml:"ApiPassword"`
    Resource string `yaml:"Resource"`
+   Mode string `yaml:"Mode"`
 
    TagFile string `yaml:"TagFile"`
    ServoClose int `yaml:"ServoClose"`
@@ -261,7 +262,8 @@ func BadgeTag(id uint64) {
 			client.Publish(topic,0,false,message)
 
 			if (tag.Allowed) {
-				open_servo(cfg.ServoOpen, cfg.ServoClose, cfg.WaitSecs)
+					open_servo(cfg.ServoOpen, cfg.ServoClose, cfg.WaitSecs, cfg.Mode)
+
 			  return
 			}
 		} 
@@ -419,7 +421,16 @@ func main() {
 	}
 
 
-	servo_reset(cfg.ServoClose)
+	switch (cfg.Mode) {
+		case "servo":
+			servo_reset(cfg.ServoClose)
+		case "openhigh":
+			door_reset(false)
+		case "openlow":
+			door_reset(true)
+		default:
+			panic("Mode in configfile must be \"servo\", \"openhigh\" or \"openlow\"")
+	}
   // REMOVE
   //NFClistener()
 
@@ -437,7 +448,7 @@ func main() {
 		hw.ZeroPinEventDetectMask()
 
 		if (*openflag) {
-				open_servo(cfg.ServoOpen, cfg.ServoClose, cfg.WaitSecs)
+				open_servo(cfg.ServoOpen, cfg.ServoClose, cfg.WaitSecs, cfg.Mode)
 		}
 
 
