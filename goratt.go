@@ -262,8 +262,7 @@ func BadgeTag(id uint64) {
 			client.Publish(topic,0,false,message)
 
 			if (tag.Allowed) {
-					open_servo(cfg.ServoOpen, cfg.ServoClose, cfg.WaitSecs, cfg.Mode)
-
+				open_servo(cfg.ServoOpen, cfg.ServoClose, cfg.WaitSecs, cfg.Mode)
 			  return
 			}
 		} 

@@ -36,6 +36,7 @@ All fields are manditory
 | ApiUsername | Username for Auth backend API access |
 | ApiPassword | Password for Auth backend API access |
 | Resource | Resource name - which resource users are granted permissions for |
+| Mode  | "Servo", "openhigh" or "openlow" |
 | TagFile | Path to file to store allowed tags on local system |
 | NFCdevice |  Device file of NFC reader for tags swiped in. /dev/tty for local keyboard, or /dev/ttyUSB0, etc |
 
