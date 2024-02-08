@@ -28,7 +28,7 @@ All fields are manditory
 | CACert | Path of file for the Root CA of your MQTT server |
 | ClientCert  | Path of file for your GoRATT's TLS client cert |
 | ClientKey | Path for TLS client key |
-| ClientID | Client ID for Auth backend. MAC address of machine, no seperators |
+| ClientID | *Unique* Client ID for Auth backend. MAC address of machine, no seperators |
 | MqttHost | Hostname of MQTT server |
 | MqttPort | Port number of MQTT server |
 | ApiCAFile | CA for Auth backend (Web site) |
@@ -40,3 +40,7 @@ All fields are manditory
 | TagFile | Path to file to store allowed tags on local system |
 | NFCdevice |  Device file of NFC reader for tags swiped in. /dev/tty for local keyboard, or /dev/ttyUSB0, etc |
 
+
+# Troubleshooting
+
+If ClientID is not unique, mqtt connections will be disrupted, and ACL update messages will get lost!
