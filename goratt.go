@@ -226,6 +226,21 @@ func ReadTagFile() {
 
 }
 
+func onConnectHandler(client mqtt.Client) {
+	fmt.Println("MQTT Connection Established")
+	// Subscribe to the topic
+	var topic = "ratt/control/broadcast/acl/update"
+	if token := client.Subscribe(topic, 0, nil); token.Wait() && token.Error() != nil {
+		log.Fatal("MQTT Subscribe error: ",token.Error())
+	}
+
+}
+
+func onConnectionLost(client mqtt.Client, err error) {
+	// Panic - because a restart will fix???
+	// panic(fmt.Errorf("MQTT CONNECTION LOST: %s",err))
+	fmt.Printf("MQTT CONNECTION LOST: %s",err)
+}
 func onMessageReceived(client mqtt.Client, message mqtt.Message) {
 	//fmt.Printf("Received message on topic: %s\n", message.Topic())
 	//fmt.Printf("Message: %s\n", message.Payload())
@@ -457,9 +472,6 @@ func main() {
 	// MQTT client ID
 	clientID := cfg.ClientID
 
-	// MQTT topic to subscribe to
-	topic := "#"
-
 	// Load client key pair for TLS (replace with your own paths)
 	cert, err := tls.LoadX509KeyPair(cfg.ClientCert, cfg.ClientKey)
 	if err != nil {
@@ -487,20 +499,24 @@ func main() {
 		AddBroker(broker).
 		SetClientID(clientID).
 		SetAutoReconnect(true).
+		SetConnectRetry(true).
+		SetKeepAlive(60 * time.Second).
 		SetTLSConfig(tlsConfig).
+		SetConnectionLostHandler(onConnectionLost).
+		SetOnConnectHandler(onConnectHandler).
 		SetDefaultPublishHandler(onMessageReceived)
 
 	// Create an MQTT client
 	client = mqtt.NewClient(opts)
 
+	mqtt.ERROR = log.New(os.Stdout, "[ERROR] ", 0)
+	mqtt.CRITICAL = log.New(os.Stdout, "[CRIT] ", 0)
+	mqtt.WARN = log.New(os.Stdout, "[WARN]  ", 0)
+	//mqtt.DEBUG = log.New(os.Stdout, "[DEBUG] ", 0)
+
 	// Connect to the MQTT broker
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
 		log.Fatal("MQTT Connect error: ",token.Error())
-	}
-
-	// Subscribe to the topic
-	if token := client.Subscribe(topic, 0, nil); token.Wait() && token.Error() != nil {
-		log.Fatal("MQTT Subscribe error: ",token.Error())
 	}
 
 	ReadTagFile()
