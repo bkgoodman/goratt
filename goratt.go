@@ -50,6 +50,7 @@ type RattConfig struct {
    WaitSecs int `yaml:"WaitSecs"`
 
    NFCdevice string `yaml:"NFCdevice"`
+   NFCmode string `yaml:"NFCmode"`
 }
 
 // In-memory ACL list
@@ -298,7 +299,40 @@ func BadgeTag(id uint64) {
 	return
 }
 
-// THis reads from the weird USB RFID Serial Protocol
+// Read from KEYBOARD in simple 10h + cr format
+func readkdb_10h() {
+	fmt.Println("USB 10H Keyboard mode")
+	file,err := os.Open(cfg.NFCdevice)
+	if (err != nil) {
+		log.Fatal("Error Opening NFC device : ",err)
+		return
+	}
+	defer file.Close()
+
+	// Create a bufio.Scanner to read lines from the file
+	scanner := bufio.NewScanner(file)
+
+	// Loop through each line
+	for scanner.Scan() {
+		line := scanner.Text()
+		fmt.Println("Got NFC Tag: "+line)
+			// Convert the line to an integer
+		number, err := strconv.ParseUint(line,10,64)
+		if err != nil {
+			fmt.Println("Error converting to integer:", err)
+		} else {
+			fmt.Println("Got tag number",number)
+		}
+		BadgeTag(number)
+	}
+
+	// Check for errors from scanner
+	if err := scanner.Err(); err != nil {
+		fmt.Println("Error reading file:", err)
+	}
+}
+
+// THis reads from the weird USB RFID Serial Protocol w/ Weird Encoding
 func readrfid() uint64  {
       // Open the serial port
     //mode := &serial.Mode{
@@ -376,16 +410,22 @@ func readrfid() uint64  {
 }
 
 func NFClistener() {
-	for {
-	tag := readrfid()
-	//var tag uint64 
-	//tag = 0
-	//time.Sleep(time.Second * 3)
-	if (tag !=  0) {
-		fmt.Println("Got RFID",tag)
-		BadgeTag(tag)
-	}
-}
+  if cfg.NFCmode=="10h-kbd" {
+      // 10 hex digits - USB Keyboard device
+      readkdb_10h() 
+  } else {
+    for {
+      // Default - Serial device w/ weird protocol
+      tag := readrfid()
+      //var tag uint64 
+      //tag = 0
+      //time.Sleep(time.Second * 3)
+      if (tag !=  0) {
+        fmt.Println("Got RFID",tag)
+        BadgeTag(tag)
+      }
+    }
+  }
 }
 
 // This reads regular numbers from the device
@@ -445,8 +485,6 @@ func main() {
 		default:
 			panic("Mode in configfile must be \"servo\", \"openhigh\" or \"openlow\"")
 	}
-  // REMOVE
-  //NFClistener()
 
     hw, err := govattu.Open()
     if err != nil {
