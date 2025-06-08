@@ -25,6 +25,8 @@ import (
 
 	"github.com/tarm/serial"
 	"bytes"
+    "github.com/kenshaw/evdev"
+    "context"
 )
 
 
@@ -302,35 +304,56 @@ func BadgeTag(id uint64) {
 // Read from KEYBOARD in simple 10h + cr format
 func readkdb_10h() {
 	fmt.Println("USB 10H Keyboard mode")
-	file,err := os.Open(cfg.NFCdevice)
+	device,err := evdev.OpenFile(cfg.NFCdevice)
 	if (err != nil) {
 		log.Fatal("Error Opening NFC device : ",err)
 		return
 	}
-	defer file.Close()
+	defer device.Close()
 
-	// Create a bufio.Scanner to read lines from the file
-	scanner := bufio.NewScanner(file)
+    
+    fmt.Printf("Opened keyboard device: %s\n", device.Name()) // Device name from evdev
+	fmt.Printf("Vendor: 0x%04x, Product: 0x%04x\n", device.ID().Vendor, device.ID().Product)
+	fmt.Println("Listening for keyboard events. Press keys to see output.")
+	fmt.Println("Press Ctrl+C to exit.")
+    ch := device.Poll(context.Background())
+    strbuf := ""
+    loop:
+	for {
+		select {
+		case event := <-ch:
+			// channel closed
+			if event == nil {
+				break loop
+			}
 
-	// Loop through each line
-	for scanner.Scan() {
-		line := scanner.Text()
-		fmt.Println("Got NFC Tag: "+line)
-			// Convert the line to an integer
-		number, err := strconv.ParseUint(line,10,64)
-		if err != nil {
-			fmt.Println("Error converting to integer:", err)
-		} else {
-			fmt.Println("Got tag number",number)
+			switch event.Type.(type) {
+			case evdev.KeyType:
+                if (event.Value == 1) {
+                        //log.Printf("received key event: %+v TYPE:%+v/%T", event,event.Type,event.Type)
+                        if (event.Type == evdev.KeyEnter) {
+                                //log.Printf("ENTER\n")
+                                number, err := strconv.ParseUint(strbuf,16,64)
+                                if (err == nil) {
+                                        BadgeTag(number)
+                                } else {
+                                        log.Printf("Bad hex badge line \"%s\"\n",strbuf)
+                                }
+                                strbuf = ""
+                        } else {
+                                //log.Printf("KEY (%d) \"%s\"\n",event.Type,event.Type)
+                                s := evdev.KeyType(event.Code).String()
+                                //log.Printf("ecode %+v keytype %T \"%v\"\n",event.Code,s,s)
+                                strbuf += s
+                                //log.Printf("strbuf now \"%s\"\n",strbuf)
+                        }
+                }
+
+			}
 		}
-		BadgeTag(number)
-	}
-
-	// Check for errors from scanner
-	if err := scanner.Err(); err != nil {
-		fmt.Println("Error reading file:", err)
 	}
 }
+
 
 // THis reads from the weird USB RFID Serial Protocol w/ Weird Encoding
 func readrfid() uint64  {
@@ -412,6 +435,7 @@ func readrfid() uint64  {
 func NFClistener() {
   if cfg.NFCmode=="10h-kbd" {
       // 10 hex digits - USB Keyboard device
+      fmt.Println("KBD10go")
       readkdb_10h() 
   } else {
     for {
@@ -462,6 +486,13 @@ func OLD_NFClistener() {
 
 }
 
+func mqttconnect() {
+	// Connect to the MQTT broker
+	if token := client.Connect(); token.Wait() && token.Error() != nil {
+		log.Fatal("MQTT Connect error: ",token.Error())
+	}
+	fmt.Println("MQTT Connected")
+}
 func main() {
 	openflag := flag.Bool("holdopen",false,"Hold door open indefinitley")
 	cfgfile := flag.String("cfg","goratt.cfg","Config file")
@@ -546,16 +577,14 @@ func main() {
 
 	// Create an MQTT client
 	client = mqtt.NewClient(opts)
+    fmt.Println("TESTTEST 1")
 
 	mqtt.ERROR = log.New(os.Stdout, "[ERROR] ", 0)
 	mqtt.CRITICAL = log.New(os.Stdout, "[CRIT] ", 0)
 	mqtt.WARN = log.New(os.Stdout, "[WARN]  ", 0)
 	//mqtt.DEBUG = log.New(os.Stdout, "[DEBUG] ", 0)
 
-	// Connect to the MQTT broker
-	if token := client.Connect(); token.Wait() && token.Error() != nil {
-		log.Fatal("MQTT Connect error: ",token.Error())
-	}
+    fmt.Println("TESTTEST 2")
 
 	ReadTagFile()
 	GetACLList()
@@ -565,9 +594,9 @@ func main() {
 	hw.PinClear(25)
 	hw.Close()
 
+    go mqttconnect()
 	go NFClistener()
 	go PingSender()
-	fmt.Printf("Connected to %s\n", broker)
 
 	// Wait for a signal to exit
 	c := make(chan os.Signal, 1)
