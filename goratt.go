@@ -53,6 +53,8 @@ type RattConfig struct {
 
    NFCdevice string `yaml:"NFCdevice"`
    NFCmode string `yaml:"NFCmode"`
+
+   LEDpipe string `yaml:"LEDpipe"`
 }
 
 // In-memory ACL list
@@ -64,6 +66,8 @@ type ACLlist struct {
 }
 
 var validTags []ACLlist
+ 
+var LEDfile *os.File
 
 var cfg RattConfig
 // From API - off the wire
@@ -296,8 +300,14 @@ func BadgeTag(id uint64) {
 	}
 	defer  hw.Close()
 	hw.PinSet(23)
+  if (LEDfile != nil) {
+    LEDfile.Write([]byte("@2 !10000 ff"))
+  }
 	time.Sleep(time.Duration(3) * time.Second)
 	hw.PinClear(23)
+  if (LEDfile != nil) {
+    LEDfile.Write([]byte("@3 !150000 400000"))
+  }
 	return
 }
 
@@ -517,6 +527,13 @@ func main() {
 			panic("Mode in configfile must be \"servo\", \"openhigh\" or \"openlow\"")
 	}
 
+  if (cfg.LEDpipe != "") {
+    LEDfile,err = os.Open(cfg.LEDpipe)
+    if (LEDfile == nil) {
+      log.Fatal("Error opening LED pipe: ",err)
+    }
+    defer  LEDfile.Close()
+  }
     hw, err := govattu.Open()
     if err != nil {
       panic(err)
@@ -594,7 +611,11 @@ func main() {
 	hw.PinClear(25)
 	hw.Close()
 
-    go mqttconnect()
+  if (LEDfile != nil) {
+    LEDfile.Write([]byte("@3 !150000 400000"))
+  }
+
+  go mqttconnect()
 	go NFClistener()
 	go PingSender()
 

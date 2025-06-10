@@ -40,6 +40,7 @@ All fields are manditory
 | TagFile | Path to file to store allowed tags on local system |
 | NFCdevice |  Device file of NFC reader for tags swiped in. /dev/tty for local keyboard, or /dev/ttyUSB0, etc |
 | NFCmode |  Use "10h-kbd" for 10h (hex) keyboard device. `NFCdevce` must be a `/dev/input/event0" device for this
+| LEDpipe | Filename for named pipe for LED commands |
 
 
 # Troubleshooting
