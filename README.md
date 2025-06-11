@@ -44,6 +44,49 @@ All fields are manditory
 | LEDpipe | Filename for named pipe for LED commands |
 
 
+# Neopixel Support
+
+Neopixels are supported only through an external program to drive them. See [RPi Neopixel Tool](http://github.com/bkgoodman/rpi-neopixel-tool.git)
+
+Coordination is necessary when starting neopixel and doorlock services, for example in systemd files, notice that one is dependent on the other:
+
+## Doorlock
+```
+[Unit]
+Description=Doorlock RATT
+Requires=neopixel.service
+
+[Service]
+WorkingDirectory=/home/bkg
+Type=idle
+User=root
+Restart=always
+ExecStart=/home/bkg/goratt
+RestartSec=15s
+
+[Install]
+WantedBy=multi-user.target
+```
+
+## Neopixel
+```
+[Unit]
+Description=Doorlock NeoPixel Service
+After=multi-user.target
+
+[Service]
+WorkingDirectory=/home/bkg
+Type=idle
+User=root
+Restart=always
+ExecStart=/home/bkg/rpi-neopixel-tool/neotool -p /home/bkg/ledpipe -x 7 -c
+RestartSec=15s
+
+[Install]
+WantedBy=multi-user.target
+```
+
+
 # Troubleshooting
 
 If ClientID is not unique, mqtt connections will be disrupted, and ACL update messages will get lost!

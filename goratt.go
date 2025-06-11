@@ -10,6 +10,7 @@ import (
 	 "os/signal"
 	"crypto/x509"
 	"io/ioutil"
+    "syscall"
 	"sync"
 	"gopkg.in/yaml.v2"
 	"flag"
@@ -643,6 +644,8 @@ func main() {
 	// Wait for a signal to exit
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
+	signal.Notify(c, os.Kill)
+	signal.Notify(c, syscall.SIGTERM)
 	//fmt.Println("Waitsignal")
 	<-c
 
