@@ -53,6 +53,8 @@ type RattConfig struct {
 
    NFCdevice string `yaml:"NFCdevice"`
    NFCmode string `yaml:"NFCmode"`
+
+   DoorPin *int `yaml:"DoorPin"`
 }
 
 // In-memory ACL list
@@ -505,6 +507,10 @@ func main() {
 	    log.Fatal("Config Decode error: ",err)
 	}
 
+    if (cfg.DoorPin == nil) {
+            doorpin_18 := 18
+            cfg.DoorPin = &doorpin_18
+    }
 
 	switch (cfg.Mode) {
 		case "servo":
