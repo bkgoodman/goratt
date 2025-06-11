@@ -90,9 +90,7 @@ func open_servo(servoOpen int, servoClose int, waitSecs int, mode string) {
 
 	fmt.Println("Servo Opening XX.")
 	hw.PinSet(25)
-  if (LEDfile != nil) {
-    LEDfile.Write([]byte("@1 !50000 8000"))
-  }
+  LEDwriteString(LEDaccessGranted)
 	switch (mode) {
 		case "servo":
 			servoFromTo(hw,servoClose,servoOpen)
@@ -123,9 +121,7 @@ func open_servo(servoOpen int, servoClose int, waitSecs int, mode string) {
 			panic("Invalid mode in configu file")
 	}
 	hw.PinClear(25)
-  if (LEDfile != nil) {
-    LEDfile.Write([]byte("@3 !150000 400000"))
-  }
+    LEDwriteString(LEDidleString) // Set LED to Idle
 	fmt.Println("Servo End.")
 	hw.Close()
 }

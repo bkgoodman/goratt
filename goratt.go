@@ -69,8 +69,17 @@ type ACLlist struct {
 var validTags []ACLlist
  
 var LEDfile *os.File
-
+var LEDidleString string
 var cfg RattConfig
+
+const (
+        LEDconnectionLost = "@2 !150000 004040"
+        LEDnormalIdle = "@3 !150000 400000"
+        LEDaccessGranted = "@1 !50000 8000"
+        LEDaccessDenied = "@2 !10000 ff"
+        LEDterminated = "@0 010101"
+
+)
 // From API - off the wire
 type ACLentry struct {
 	 Tagid string `json:"tagid"`
@@ -87,6 +96,16 @@ type ACLentry struct {
 
 
 var aclfileMutex sync.Mutex
+
+func LEDupdateIdleString (str string) {
+  LEDidleString = str
+}
+
+func LEDwriteString (str string) {
+  if (LEDfile != nil) {
+    LEDfile.Write([]byte(str))
+  }
+}
 
 func GetACLList() {
 	// Lock the mutex before entering the critical section
@@ -242,12 +261,17 @@ func onConnectHandler(client mqtt.Client) {
 		log.Fatal("MQTT Subscribe error: ",token.Error())
 	}
 
+    // Slow Blue Pulse
+    LEDupdateIdleString(LEDnormalIdle)
+
 }
 
 func onConnectionLost(client mqtt.Client, err error) {
 	// Panic - because a restart will fix???
 	// panic(fmt.Errorf("MQTT CONNECTION LOST: %s",err))
 	fmt.Printf("MQTT CONNECTION LOST: %s",err)
+    // Slow Yellow Wink
+    LEDupdateIdleString(LEDconnectionLost)
 }
 func onMessageReceived(client mqtt.Client, message mqtt.Message) {
 	//fmt.Printf("Received message on topic: %s\n", message.Topic())
@@ -301,14 +325,10 @@ func BadgeTag(id uint64) {
 	}
 	defer  hw.Close()
 	hw.PinSet(23)
-  if (LEDfile != nil) {
-    LEDfile.Write([]byte("@2 !10000 ff"))
-  }
+  LEDwriteString(LEDaccessDenied)
 	time.Sleep(time.Duration(3) * time.Second)
 	hw.PinClear(23)
-  if (LEDfile != nil) {
-    LEDfile.Write([]byte("@3 !150000 400000"))
-  }
+  LEDwriteString(LEDidleString)
 	return
 }
 
@@ -533,7 +553,7 @@ func main() {
 	}
 
   if (cfg.LEDpipe != "") {
-    LEDfile,err = os.Open(cfg.LEDpipe)
+    LEDfile,err = os.OpenFile(cfg.LEDpipe, os.O_RDWR, 0644)
     if (LEDfile == nil) {
       log.Fatal("Error opening LED pipe: ",err)
     }
@@ -543,7 +563,6 @@ func main() {
     if err != nil {
       panic(err)
     }
-		// 18 is SERVO!
 		hw.PinMode(23,govattu.ALToutput)
 		hw.PinMode(24,govattu.ALToutput)
 		hw.PinMode(25,govattu.ALToutput)
@@ -599,14 +618,12 @@ func main() {
 
 	// Create an MQTT client
 	client = mqtt.NewClient(opts)
-    fmt.Println("TESTTEST 1")
 
 	mqtt.ERROR = log.New(os.Stdout, "[ERROR] ", 0)
 	mqtt.CRITICAL = log.New(os.Stdout, "[CRIT] ", 0)
 	mqtt.WARN = log.New(os.Stdout, "[WARN]  ", 0)
 	//mqtt.DEBUG = log.New(os.Stdout, "[DEBUG] ", 0)
 
-    fmt.Println("TESTTEST 2")
 
 	ReadTagFile()
 	GetACLList()
@@ -616,9 +633,8 @@ func main() {
 	hw.PinClear(25)
 	hw.Close()
 
-  if (LEDfile != nil) {
-    LEDfile.Write([]byte("@3 !150000 400000"))
-  }
+    LEDupdateIdleString(LEDconnectionLost)
+    LEDwriteString(LEDconnectionLost)
 
   go mqttconnect()
 	go NFClistener()
@@ -634,5 +650,6 @@ func main() {
 	// Disconnect from the MQTT broker
 	client.Disconnect(250)
 	fmt.Println("Disconnected from the MQTT broker")
+    LEDwriteString(LEDterminated)
 }
 
