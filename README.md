@@ -86,6 +86,8 @@ RestartSec=15s
 WantedBy=multi-user.target
 ```
 
+### Note
+Note: If you are using a keyboard-based RFID reader, it is recommended to stop and disable the getty@tty1.service with the enclosed kbdstop service.
 
 # Troubleshooting
 
