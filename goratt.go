@@ -74,7 +74,7 @@ var LEDidleString string
 var cfg RattConfig
 
 const (
-        LEDconnectionLost = "@2 !150000 004040"
+        LEDconnectionLost = "@2 !150000 001010"
         LEDnormalIdle = "@3 !150000 400000"
         LEDaccessGranted = "@1 !50000 8000"
         LEDaccessDenied = "@2 !10000 ff"
@@ -264,6 +264,7 @@ func onConnectHandler(client mqtt.Client) {
 
     // Slow Blue Pulse
     LEDupdateIdleString(LEDnormalIdle)
+    LEDwriteString(LEDnormalIdle)
 
 }
 
@@ -273,6 +274,7 @@ func onConnectionLost(client mqtt.Client, err error) {
 	fmt.Printf("MQTT CONNECTION LOST: %s",err)
     // Slow Yellow Wink
     LEDupdateIdleString(LEDconnectionLost)
+    LEDwriteString(LEDconnectionLost)
 }
 func onMessageReceived(client mqtt.Client, message mqtt.Message) {
 	//fmt.Printf("Received message on topic: %s\n", message.Topic())
@@ -364,8 +366,9 @@ func readkdb_10h() {
                 if (event.Value == 1) {
                         //log.Printf("received key event: %+v TYPE:%+v/%T", event,event.Type,event.Type)
                         if (event.Type == evdev.KeyEnter) {
-                                //log.Printf("ENTER\n")
                                 number, err := strconv.ParseUint(strbuf,16,64)
+                                number &= 0xffffffff
+                                log.Printf("Got 10h String %s BadgeId %d\n",strbuf,number)
                                 if (err == nil) {
                                         BadgeTag(number)
                                 } else {
@@ -467,7 +470,6 @@ func readrfid() uint64  {
 func NFClistener() {
   if cfg.NFCmode=="10h-kbd" {
       // 10 hex digits - USB Keyboard device
-      fmt.Println("KBD10go")
       readkdb_10h() 
   } else {
     for {
