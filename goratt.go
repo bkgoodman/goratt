@@ -628,6 +628,9 @@ func main() {
 	//mqtt.DEBUG = log.New(os.Stdout, "[DEBUG] ", 0)
 
 
+    // Init video
+    video()
+
 	ReadTagFile()
 	GetACLList()
 
