@@ -33,6 +33,8 @@ import (
 
 var client mqtt.Client
 
+var lastEventTime time.Time
+
 type RattConfig struct {
    CACert string `yaml:"CACert"`
    ClientCert string `yaml:"ClientCert"`
@@ -527,6 +529,22 @@ func mqttconnect() {
 	}
 	fmt.Println("MQTT Connected")
 }
+
+func display() {
+    for {
+            video_available()
+            video_update()
+            time.Sleep(5 * time.Second)
+
+            video_draw()
+            video_update()
+            time.Sleep(5 * time.Second)
+
+            video_comein()
+            video_update()
+            time.Sleep(5 * time.Second)
+    }
+}
 func main() {
 	openflag := flag.Bool("holdopen",false,"Hold door open indefinitley")
 	cfgfile := flag.String("cfg","goratt.cfg","Config file")
@@ -629,7 +647,8 @@ func main() {
 
 
     // Init video
-    video()
+    lastEventTime = time.Now()
+    video_init()
 
 	ReadTagFile()
 	GetACLList()
@@ -645,6 +664,7 @@ func main() {
   go mqttconnect()
 	go NFClistener()
 	go PingSender()
+    go display()
 
 	// Wait for a signal to exit
 	c := make(chan os.Signal, 1)

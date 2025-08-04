@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"time"
+    "strings"
     _ "image/png" 
 	"github.com/d21d3q/framebuffer"
 	"github.com/fogleman/gg"
@@ -19,6 +20,57 @@ func clearFramebuffer(buf []byte) {
 	}
 }
 
+func setFontSize(size int) {
+	fontPathGG := "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+	fontSizeGG := float64(size)
+    err := dc.LoadFontFace(fontPathGG, fontSizeGG)
+	if err != nil {
+		log.Fatalf("Failed to load font face '%s' for gg: %v. Ensure the font file is present and accessible.", fontPathGG, err)
+	}
+}
+
+func HowLongAgo(t time.Time) string {
+	// Calculate the duration since the given time.
+	duration := time.Since(t)
+
+	// Get the total duration in full minutes (truncated, not rounded).
+	// This simplifies the logic and ensures "59.9 minutes" is not "1 hour".
+	totalMinutes := int(duration.Minutes())
+
+	// Handle the minimum granularity of 1 minute.
+	if totalMinutes < 1 {
+		return "1 minute"
+	}
+
+	hours := totalMinutes / 60
+	minutes := totalMinutes % 60
+
+	// Use a slice to build the output string parts, which handles different combinations.
+	var parts []string
+	if hours > 0 {
+		if hours == 1 {
+			parts = append(parts, "1 hour")
+		} else {
+			parts = append(parts, fmt.Sprintf("%d hours", hours))
+		}
+	}
+
+	if minutes > 0 {
+		if minutes == 1 {
+			parts = append(parts, "1 minute")
+		} else {
+			parts = append(parts, fmt.Sprintf("%d minutes", minutes))
+		}
+	}
+
+	// This case should not be hit due to the totalMinutes < 1 check,
+	// but it's a good safety fallback.
+	if len(parts) == 0 {
+		return "1 minute"
+	}
+
+	return strings.Join(parts, ", ")
+}
 // loadImage loads a PNG from the specified path.
 func loadImage(path string) (image.Image, error) {
     file, err := os.Open(path)
@@ -35,7 +87,14 @@ func loadImage(path string) (image.Image, error) {
     return img, nil
 }
 
-func video() {
+var dc *gg.Context
+var pixBuffer []byte
+var WIDTH int
+var HEIGHT int
+var rgbaImage *image.RGBA
+var lineLengthBytes int
+
+func video_init() {
 	// Reconciled: Using two parameters for OpenFrameBuffer as per your system's requirement
 	fbLowLevel, err := framebuffer.OpenFrameBuffer("/dev/fb0", os.O_RDWR)
 	if err != nil {
@@ -53,15 +112,15 @@ func video() {
 	}
 
 	// pixBuffer is the actual 16-bit framebuffer memory
-	pixBuffer, err := fbLowLevel.Pixels()
+	pixBuffer, err = fbLowLevel.Pixels()
 	if err != nil {
 		log.Fatalf("Failed to get pixel data from framebuffer: %v", err)
 	}
 
-	WIDTH := int(varInfo.XRes)
-	HEIGHT := int(varInfo.YRes)
+	WIDTH = int(varInfo.XRes)
+	HEIGHT = int(varInfo.YRes)
 	bitsPerPixel := varInfo.BitsPerPixel
-	lineLengthBytes := int(fixedInfo.LineLength) // Stride in bytes for framebuffer
+	lineLengthBytes = int(fixedInfo.LineLength) // Stride in bytes for framebuffer
 
 	fmt.Printf("Framebuffer opened:\n")
 	fmt.Printf("  Resolution: %dx%d\n", WIDTH, HEIGHT)
@@ -71,12 +130,99 @@ func video() {
 
 	// --- NEW: Create a separate 32-bit RGBA image buffer for drawing ---
 	// This is where gg and x/image/font will draw. It's in system RAM, not directly FB.
-	rgbaImage := image.NewRGBA(image.Rect(0, 0, WIDTH, HEIGHT))
-	dc := gg.NewContextForRGBA(rgbaImage) // gg context now draws to this 32-bit image
+	rgbaImage = image.NewRGBA(image.Rect(0, 0, WIDTH, HEIGHT))
+	dc = gg.NewContextForRGBA(rgbaImage) // gg context now draws to this 32-bit image
 	// --- END NEW ---
+	clearFramebuffer(pixBuffer) // Clear the actual framebuffer directly
+}
+
+func video_available() {
 
 	fmt.Println("Clearing framebuffer (16-bit)...")
 	clearFramebuffer(pixBuffer) // Clear the actual framebuffer directly
+
+	fmt.Println("Drawing a red Background")
+	dc.SetRGB(0, 0.5, 0)
+	dc.DrawRectangle(0, 0, 1024, 600)
+	dc.Fill()
+
+	fmt.Println("Drawing text with gg (to 32-bit buffer)...")
+	dc.SetRGB(1, 1, 1)
+
+    setFontSize(64)
+	dc.DrawStringAnchored("Room Available", float64(WIDTH/2), 280, 0.5, 0.5)
+    setFontSize(32)
+	dc.DrawStringAnchored("Swipe fob to use room", float64(WIDTH/2), 340, 0.5, 0.5)
+
+
+    /* Update Time */
+
+    setFontSize(60)
+	dc.SetRGB(0.2, 0.5, 0.2)
+	now := time.Now()
+    TIMEYPOS:=float64(550)
+	dc.DrawRectangle(0, TIMEYPOS-30, float64(WIDTH), 66)
+	dc.Fill()
+	dc.SetRGB(0.0, 0.0, 0.0)
+
+	now = time.Now()
+    formattedDateTime := now.Format("Jan-02 3:04pm")
+	dc.DrawStringAnchored(formattedDateTime, float64(WIDTH/2)+25, TIMEYPOS, 0.5, 0.5)
+
+
+    // User Banner
+	dc.SetRGB(0.2, 0.5, 0.2)
+	dc.DrawRectangle(0, 10, float64(WIDTH), 66)
+	dc.Fill()
+	dc.SetRGB(0.0, 0.0, 0.0)
+	//dc.DrawStringAnchored("Eric Roth", float64(WIDTH/2)+25, 40, 0.5, 0.5)
+
+}
+func video_comein() {
+
+	fmt.Println("Clearing framebuffer (16-bit)...")
+
+	fmt.Println("Drawing a red Background")
+	dc.SetRGB(0, 0, 0.5)
+	dc.DrawRectangle(0, 0, 1024, 600)
+	dc.Fill()
+
+	fmt.Println("Drawing text with gg (to 32-bit buffer)...")
+	dc.SetRGB(1, 1, 1)
+
+	fontPathGG := "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+	fontSizeGG := float64(32)
+    err := dc.LoadFontFace(fontPathGG, fontSizeGG)
+	if err != nil {
+		log.Fatalf("Failed to load font face '%s' for gg: %v. Ensure the font file is present and accessible.", fontPathGG, err)
+	}
+    setFontSize(64)
+
+	//now := time.Now()
+	dc.DrawStringAnchored("Room in Use", float64(WIDTH/2), 300, 0.5, 0.5)
+
+
+    /* Update Time */
+    setFontSize(60)
+
+	dc.SetRGB(0.2, 0.2, 0.5)
+    TIMEYPOS:=float64(550)
+	dc.DrawRectangle(0, TIMEYPOS-30, float64(WIDTH), 66)
+	dc.Fill()
+	dc.SetRGB(0.0, 0.0, 0.0)
+
+	dc.DrawStringAnchored(HowLongAgo(lastEventTime), float64(WIDTH/2)+25, TIMEYPOS, 0.5, 0.5)
+
+
+    // User Banner
+	dc.SetRGB(0.2, 0.2, 0.5)
+	dc.DrawRectangle(0, 10, float64(WIDTH), 66)
+	dc.Fill()
+	dc.SetRGB(0.0, 0.0, 0.0)
+	dc.DrawStringAnchored("Eric Roth", float64(WIDTH/2)+25, 40, 0.5, 0.5)
+
+}
+func video_draw() {
 
 	fmt.Println("Drawing a red Background")
 	dc.SetRGB(1, 0, 0)
@@ -97,13 +243,13 @@ func video() {
 	fontSizeGG := float64(32)
 	//offset := 50.0
 
-	err = dc.LoadFontFace(fontPathGG, fontSizeGG)
+    err := dc.LoadFontFace(fontPathGG, fontSizeGG)
 	if err != nil {
 		log.Fatalf("Failed to load font face '%s' for gg: %v. Ensure the font file is present and accessible.", fontPathGG, err)
 	}
 
-	now := time.Now()
-	formattedDateTime := now.Format("2006-01-02 15:04:05")
+	//now := time.Now()
+	//formattedDateTime := now.Format("2006-01-02 15:04:05")
 
 	//dc.DrawStringAnchored(fmt.Sprintf("Left on: %s", formattedDateTime), float64(WIDTH/2)+offset, 240, 0.5, 0.5)
 
@@ -113,22 +259,15 @@ func video() {
 	// --- NEW: Convert 32-bit image to 16-bit framebuffer and blit ---
 	fmt.Println("Converting and blitting 32-bit image to 16-bit framebuffer...")
 
-    /* Update Time */
-	err = dc.LoadFontFace(fontPathGG, 60.0)
+    setFontSize(60)
 
-    //for {
 	dc.SetRGB(1, 0.3, 0.3)
     TIMEYPOS:=float64(550)
 	dc.DrawRectangle(0, TIMEYPOS-30, float64(WIDTH), 66)
 	dc.Fill()
 	dc.SetRGB(0.0, 0.0, 0.0)
-	if err != nil {
-		log.Fatalf("Failed to load font face '%s' for gg: %v. Ensure the font file is present and accessible.", fontPathGG, err)
-	}
 
-	now = time.Now()
-	formattedDateTime = now.Format("Jan-02 3:04pm")
-	dc.DrawStringAnchored(formattedDateTime, float64(WIDTH/2)+25, TIMEYPOS, 0.5, 0.5)
+	dc.DrawStringAnchored(HowLongAgo(lastEventTime), float64(WIDTH/2)+25, TIMEYPOS, 0.5, 0.5)
 
 
     // User Banner
@@ -144,6 +283,10 @@ func video() {
     dc.DrawImage(pngImage, 100, 80)
 
     /* End Update Time */
+
+}
+
+func video_update() {
 
 	// Assuming common RGB565 format for 16-bit framebuffer, and Little Endian byte order.
 	// You might need to adjust the conversion formula or byte order (binary.BigEndian)
