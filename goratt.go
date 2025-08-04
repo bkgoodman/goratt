@@ -462,6 +462,7 @@ func OLD_NFClistener() {
 
 }
 
+
 func main() {
 	openflag := flag.Bool("holdopen",false,"Hold door open indefinitley")
 	cfgfile := flag.String("cfg","goratt.cfg","Config file")
@@ -474,6 +475,20 @@ func main() {
 	    log.Fatal("Config Decode error: ",err)
 	}
 
+    NFClistener()
+    hw, err := govattu.Open()
+    if err != nil {
+      panic(err)
+    }
+		hw.PinMode(23,govattu.ALToutput)
+		hw.PinMode(24,govattu.ALToutput)
+		hw.PinMode(25,govattu.ALTinput)
+		hw.PinMode(18,govattu.ALTinput)
+		hw.PinSet(23)
+		hw.PinSet(24)
+		hw.ZeroPinEventDetectMask()
+
+    defer hw.Close()
 
 	switch (cfg.Mode) {
 		case "servo":
@@ -486,18 +501,6 @@ func main() {
 			panic("Mode in configfile must be \"servo\", \"openhigh\" or \"openlow\"")
 	}
 
-    hw, err := govattu.Open()
-    if err != nil {
-      panic(err)
-    }
-		// 18 is SERVO!
-		hw.PinMode(23,govattu.ALToutput)
-		hw.PinMode(24,govattu.ALToutput)
-		hw.PinMode(25,govattu.ALToutput)
-		hw.PinSet(23)
-		hw.PinSet(24)
-		hw.PinSet(25)
-		hw.ZeroPinEventDetectMask()
 
 		if (*openflag) {
 				open_servo(cfg.ServoOpen, cfg.ServoClose, cfg.WaitSecs, cfg.Mode)
@@ -569,6 +572,7 @@ func main() {
 	go PingSender()
 	fmt.Printf("Connected to %s\n", broker)
 
+  //dymo_label("- Ready -")
 	// Wait for a signal to exit
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
