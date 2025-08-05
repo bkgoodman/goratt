@@ -89,6 +89,7 @@ func loadImage(path string) (image.Image, error) {
 
 var dc *gg.Context
 var pixBuffer []byte
+var backBuffer []byte
 var WIDTH int
 var HEIGHT int
 var rgbaImage *image.RGBA
@@ -117,10 +118,13 @@ func video_init() {
 		log.Fatalf("Failed to get pixel data from framebuffer: %v", err)
 	}
 
+
 	WIDTH = int(varInfo.XRes)
 	HEIGHT = int(varInfo.YRes)
 	bitsPerPixel := varInfo.BitsPerPixel
 	lineLengthBytes = int(fixedInfo.LineLength) // Stride in bytes for framebuffer
+
+    backBuffer =  make([]byte, HEIGHT*lineLengthBytes)
 
 	fmt.Printf("Framebuffer opened:\n")
 	fmt.Printf("  Resolution: %dx%d\n", WIDTH, HEIGHT)
@@ -141,12 +145,11 @@ func video_available() {
 	fmt.Println("Clearing framebuffer (16-bit)...")
 	clearFramebuffer(pixBuffer) // Clear the actual framebuffer directly
 
-	fmt.Println("Drawing a red Background")
+    // Background
 	dc.SetRGB(0, 0.5, 0)
 	dc.DrawRectangle(0, 0, 1024, 600)
 	dc.Fill()
 
-	fmt.Println("Drawing text with gg (to 32-bit buffer)...")
 	dc.SetRGB(1, 1, 1)
 
     setFontSize(64)
@@ -158,12 +161,12 @@ func video_available() {
     /* Update Time */
 
     setFontSize(60)
-	dc.SetRGB(0.2, 0.5, 0.2)
+	dc.SetRGB(0.3, 0.5, 0.3)
 	now := time.Now()
     TIMEYPOS:=float64(550)
 	dc.DrawRectangle(0, TIMEYPOS-30, float64(WIDTH), 66)
 	dc.Fill()
-	dc.SetRGB(0.0, 0.0, 0.0)
+	dc.SetRGB(0, 0.25, 0)
 
 	now = time.Now()
     formattedDateTime := now.Format("Jan-02 3:04pm")
@@ -171,7 +174,7 @@ func video_available() {
 
 
     // User Banner
-	dc.SetRGB(0.2, 0.5, 0.2)
+	dc.SetRGB(0.3, 0.5, 0.3)
 	dc.DrawRectangle(0, 10, float64(WIDTH), 66)
 	dc.Fill()
 	dc.SetRGB(0.0, 0.0, 0.0)
@@ -187,18 +190,8 @@ func video_comein() {
 	dc.DrawRectangle(0, 0, 1024, 600)
 	dc.Fill()
 
-	fmt.Println("Drawing text with gg (to 32-bit buffer)...")
 	dc.SetRGB(1, 1, 1)
-
-	fontPathGG := "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-	fontSizeGG := float64(32)
-    err := dc.LoadFontFace(fontPathGG, fontSizeGG)
-	if err != nil {
-		log.Fatalf("Failed to load font face '%s' for gg: %v. Ensure the font file is present and accessible.", fontPathGG, err)
-	}
     setFontSize(64)
-
-	//now := time.Now()
 	dc.DrawStringAnchored("Room in Use", float64(WIDTH/2), 300, 0.5, 0.5)
 
 
@@ -209,19 +202,36 @@ func video_comein() {
     TIMEYPOS:=float64(550)
 	dc.DrawRectangle(0, TIMEYPOS-30, float64(WIDTH), 66)
 	dc.Fill()
-	dc.SetRGB(0.0, 0.0, 0.0)
 
+	dc.SetRGB(0.0, 0.2, 0.0)
 	dc.DrawStringAnchored(HowLongAgo(lastEventTime), float64(WIDTH/2)+25, TIMEYPOS, 0.5, 0.5)
 
 
     // User Banner
+    if (occupiedBy != nil) {
 	dc.SetRGB(0.2, 0.2, 0.5)
 	dc.DrawRectangle(0, 10, float64(WIDTH), 66)
 	dc.Fill()
 	dc.SetRGB(0.0, 0.0, 0.0)
-	dc.DrawStringAnchored("Eric Roth", float64(WIDTH/2)+25, 40, 0.5, 0.5)
+	dc.DrawStringAnchored(*occupiedBy, float64(WIDTH/2)+25, 40, 0.5, 0.5)
+    }
 
 }
+func video_alert() {
+	dc.SetRGB(1, 1, 0)
+	dc.DrawRectangle(0, 0, 1024, 600)
+	dc.Fill()
+
+
+    pngImage, err := loadImage("alert.png")
+    _ = err
+    dc.DrawImage(pngImage, 100, 80)
+
+	dc.SetRGB(1, 0, 0)
+    setFontSize(42)
+	dc.DrawStringAnchored("Unrecognized Tag", float64(WIDTH/2)+180, 200, 0.5, 0.5)
+}
+
 func video_draw() {
 
 	fmt.Println("Drawing a red Background")
@@ -239,14 +249,6 @@ func video_draw() {
 	fmt.Println("Drawing text with gg (to 32-bit buffer)...")
 	dc.SetRGB(1, 1, 1)
 
-	fontPathGG := "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-	fontSizeGG := float64(32)
-	//offset := 50.0
-
-    err := dc.LoadFontFace(fontPathGG, fontSizeGG)
-	if err != nil {
-		log.Fatalf("Failed to load font face '%s' for gg: %v. Ensure the font file is present and accessible.", fontPathGG, err)
-	}
 
 	//now := time.Now()
 	//formattedDateTime := now.Format("2006-01-02 15:04:05")
@@ -265,8 +267,8 @@ func video_draw() {
     TIMEYPOS:=float64(550)
 	dc.DrawRectangle(0, TIMEYPOS-30, float64(WIDTH), 66)
 	dc.Fill()
-	dc.SetRGB(0.0, 0.0, 0.0)
 
+	dc.SetRGB(0.5, 0.0, 0.0)
 	dc.DrawStringAnchored(HowLongAgo(lastEventTime), float64(WIDTH/2)+25, TIMEYPOS, 0.5, 0.5)
 
 
@@ -274,13 +276,15 @@ func video_draw() {
 	dc.SetRGB(1, 0.3, 0.3)
 	dc.DrawRectangle(0, 10, float64(WIDTH), 66)
 	dc.Fill()
-	dc.SetRGB(0.0, 0.0, 0.0)
-	dc.DrawStringAnchored("Eric Roth", float64(WIDTH/2)+25, 40, 0.5, 0.5)
+    if (occupiedBy != nil) {
+            dc.SetRGB(0.0, 0.0, 0.0)
+            dc.DrawStringAnchored(*occupiedBy, float64(WIDTH/2)+25, 40, 0.5, 0.5)
+    }
 
 
     pngImage, err := loadImage("DarkroomInUse.png")
     _ = err
-    dc.DrawImage(pngImage, 100, 80)
+    dc.DrawImage(pngImage, 60, 80)
 
     /* End Update Time */
 
@@ -309,10 +313,13 @@ func video_update() {
 
 			if fbIdx+1 < len(pixBuffer) {
 				// Write 16-bit pixel to framebuffer. Assuming Little Endian.
-				binary.LittleEndian.PutUint16(pixBuffer[fbIdx:], pixel16) 
+				//binary.LittleEndian.PutUint16(pixBuffer[fbIdx:], pixel16) 
+				binary.LittleEndian.PutUint16(backBuffer[fbIdx:], pixel16) 
 			}
 		}
 	}
+
+    copy(pixBuffer,backBuffer)
 
 
 	// --- END NEW BLITTING ---

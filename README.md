@@ -39,10 +39,17 @@ All fields are manditory
 | Mode  | "Servo", "openhigh" or "openlow" |
 | TagFile | Path to file to store allowed tags on local system |
 | NFCdevice |  Device file of NFC reader for tags swiped in. /dev/tty for local keyboard, or /dev/ttyUSB0, etc |
-| NFCmode |  Use "10h-kbd" for 10h (hex) keyboard device. `NFCdevce` must be a `/dev/input/event0" device for this |
+| NFCmode |  Use "10h-kbd" for 10h (hex) keyboard device. `NFCdevice` must be a `/dev/input/event0" device for this |
 | DoorPin |  Pin Number for Door open or servo (Defaults to 18) |
 | LEDpipe | Filename for named pipe for LED commands |
 
+## NFC Modes
+
+| NFCmode | Description |
+| ---------- | ------------- |
+| (Empty) | USB Serial Device. `NFCdevice` must be name of `/dev/ttyUSB0` |
+| `10h-kbd` | For 10h (hex) keyboard device. `NFCdevice` must be a `/dev/input/event0" device for this |
+| `pipe` | Name Pipe (for debug mainly). `NFCdevice` should be named pipe file |
 
 # Neopixel Support
 

@@ -7,7 +7,9 @@ import (
 	"os"
 	"strconv"
 	"bufio"
+    "strings"
 	 "os/signal"
+     "io"
 	"crypto/x509"
 	"io/ioutil"
     "syscall"
@@ -33,6 +35,15 @@ import (
 
 var client mqtt.Client
 
+const (
+        Room_Available = iota
+        Room_Occupied
+        Room_Dark
+
+)
+var occupiedBy *string
+
+var roomState = Room_Available
 var lastEventTime time.Time
 
 type RattConfig struct {
@@ -469,8 +480,71 @@ func readrfid() uint64  {
 
 }
 
+// This is used mainly for debugging.
+// Allows tags to be written to a named pipe
+func NamedPipeListener() {
+	pipeName := "/tmp/nfctag"
+
+	// Create the named pipe (FIFO) if it doesn't exist.
+	// 0666 is the permission mode for the pipe.
+	err := syscall.Mkfifo(pipeName, 0666)
+	if err != nil && !os.IsExist(err) {
+		fmt.Fprintf(os.Stderr, "Error creating named pipe: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Listening for events on named pipe: %s\n", pipeName)
+
+	for {
+		// Open the named pipe for reading.
+		// This call will block until a writer opens the pipe.
+		file, err := os.OpenFile(pipeName, os.O_RDONLY, 0666)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error opening named pipe: %v\n", err)
+			continue
+		}
+
+		// Create a new reader to read the lines from the pipe.
+		reader := bufio.NewReader(file)
+
+		for {
+			// Read a line from the pipe.
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				// If the error is EOF, it means the writer has closed the pipe.
+				// We break the inner loop and the outer loop will re-open the pipe,
+				// ready for the next writer.
+				if err == io.EOF {
+					break
+				}
+
+				// Handle other potential errors.
+				fmt.Fprintf(os.Stderr, "Error reading from pipe: %v\n", err)
+				break
+			}
+
+			// Process the received event.
+			// The `line` includes the newline character, so we trim it.
+            line = strings.TrimSuffix(line, "\n")
+			fmt.Println( "Pipe Received event: " + line)
+               number, err := strconv.ParseUint(line,10,64)
+                if err != nil {
+                    fmt.Println("Error converting to integer:", err)
+                } else {
+                    fmt.Println("Got tag number",number)
+                        BadgeTag(number)
+                }
+                }
+
+		// Close the file handle for the pipe.
+		file.Close()
+	}
+}
+
 func NFClistener() {
-  if cfg.NFCmode=="10h-kbd" {
+  if cfg.NFCmode=="pipe" {
+          NamedPipeListener()
+  } else if cfg.NFCmode=="10h-kbd" {
       // 10 hex digits - USB Keyboard device
       readkdb_10h() 
   } else {
@@ -543,6 +617,10 @@ func display() {
             video_comein()
             video_update()
             time.Sleep(5 * time.Second)
+
+            video_alert()
+            video_update()
+            time.Sleep(5 * time.Second)
     }
 }
 func main() {
@@ -586,10 +664,9 @@ func main() {
     }
 		hw.PinMode(23,govattu.ALToutput)
 		hw.PinMode(24,govattu.ALToutput)
-		hw.PinMode(25,govattu.ALToutput)
+		hw.PinMode(25,govattu.ALTinput)
 		hw.PinSet(23)
 		hw.PinSet(24)
-		hw.PinSet(25)
 		hw.ZeroPinEventDetectMask()
 
 		if (*openflag) {
@@ -655,13 +732,12 @@ func main() {
 
 	hw.PinClear(23)
 	hw.PinClear(24)
-	hw.PinClear(25)
 	hw.Close()
 
     LEDupdateIdleString(LEDconnectionLost)
     LEDwriteString(LEDconnectionLost)
 
-  go mqttconnect()
+    go mqttconnect()
 	go NFClistener()
 	go PingSender()
     go display()
