@@ -34,17 +34,26 @@ import (
 
 
 var client mqtt.Client
+var alertMessage string
+
 
 const (
-        Room_Available = iota
-        Room_Occupied
-        Room_Dark
-
+        Event_Update = iota
+        Event_Alert
 )
+
 var occupiedBy *string
 
-var roomState = Room_Available
 var lastEventTime time.Time
+var safelight = false
+
+type UIEvent struct {
+        Event int
+        Name string
+}
+
+var uiEvent chan UIEvent
+
 
 type RattConfig struct {
    CACert string `yaml:"CACert"`
@@ -325,16 +334,22 @@ func BadgeTag(id uint64) {
 			client.Publish(topic,0,false,message)
 
 			if (tag.Allowed) {
-				open_servo(cfg.ServoOpen, cfg.ServoClose, cfg.WaitSecs, cfg.Mode)
-			  return
-			}
+				//open_servo(cfg.ServoOpen, cfg.ServoClose, cfg.WaitSecs, cfg.Mode)
+                Signin(tag.Member)
+			    return
+			}  else {
+                Disallowed()
+			    return
+            }
 		} 
 
 	}
 
 	if (found == false) {
 		fmt.Println("Tag not found",id)
+        TagNotFound()
 	}
+    /*
 	hw, err := govattu.Open()
 	if err != nil {
 		panic(err)
@@ -345,6 +360,7 @@ func BadgeTag(id uint64) {
 	time.Sleep(time.Duration(3) * time.Second)
 	hw.PinClear(23)
   LEDwriteString(LEDidleString)
+  */
 	return
 }
 
@@ -480,6 +496,57 @@ func readrfid() uint64  {
 
 }
 
+func SafelightOn() {
+   safelight = true
+   lastEventTime = time.Now()
+   uiEvent <- UIEvent { Event: Event_Update, }
+}
+
+func SafelightOff() {
+   safelight = false
+   lastEventTime = time.Now()
+   
+   uiEvent <- UIEvent { Event: Event_Update, }
+}
+
+func Signin(user string) {
+    occupiedBy = &user
+    lastEventTime = time.Now()
+    UpdateUser()
+
+}
+
+func Disallowed() {
+   alertMessage = "Not Authorized"
+   uiEvent <- UIEvent { Event: Event_Alert, }
+}
+
+func TagNotFound() {
+   alertMessage = "Tag Not Found"
+   uiEvent <- UIEvent { Event: Event_Alert, }
+}
+
+func AlreadyOccupied() {
+   alertMessage = "Already Occupied"
+   uiEvent <- UIEvent { Event: Event_Alert, }
+}
+
+
+func Signout() {
+    lastEventTime = time.Now()
+    occupiedBy = nil
+    UpdateUser()
+}
+
+// Update user - deals with safelight state
+func UpdateUser() {
+   uiEvent <- UIEvent { Event: Event_Update, }
+}
+
+func UpdateUI() {
+        // TODO check Safelight state!
+}
+
 // This is used mainly for debugging.
 // Allows tags to be written to a named pipe
 func NamedPipeListener() {
@@ -527,6 +594,17 @@ func NamedPipeListener() {
 			// The `line` includes the newline character, so we trim it.
             line = strings.TrimSuffix(line, "\n")
 			fmt.Println( "Pipe Received event: " + line)
+            switch (line) {
+            case "safe":
+                   fmt.Println("Pipe got SAFE") 
+                   SafelightOn()
+            case "nosafe":
+                   fmt.Println("Pipe got NOSAFE") 
+                   SafelightOff()
+            case "signout":
+                   fmt.Println("Pipe got SIGNOUT") 
+                   Signout()
+            default:
                number, err := strconv.ParseUint(line,10,64)
                 if err != nil {
                     fmt.Println("Error converting to integer:", err)
@@ -535,6 +613,7 @@ func NamedPipeListener() {
                         BadgeTag(number)
                 }
                 }
+        }
 
 		// Close the file handle for the pipe.
 		file.Close()
@@ -604,23 +683,47 @@ func mqttconnect() {
 	fmt.Println("MQTT Connected")
 }
 
+// Do not call directy. Use uiEvent queue
+func display_update() {
+        if (safelight) {
+                // Safelight on
+          video_draw()
+        } else if (occupiedBy == nil) {
+                // Unoccupied
+                video_available()
+        } else  {
+                // Occupied
+                video_comein()
+        }
+
+        video_update()
+}
+
+// Any display updates must be done through
+// uiEvent channel so they can be queued
 func display() {
+    display_update()
     for {
-            video_available()
-            video_update()
-            time.Sleep(5 * time.Second)
+            select {
+                    case evt := <- uiEvent :
+                      switch (evt.Event) {
+                        case Event_Alert:
+                            alertMessage = "Access Denied"
+                            video_alert()
+                            video_update()
+                            time.Sleep(3 * time.Second)
+                            display_update()
+                            break
+                        default:
+                                display_update()
+                    
+            }
 
-            video_draw()
-            video_update()
-            time.Sleep(5 * time.Second)
-
-            video_comein()
-            video_update()
-            time.Sleep(5 * time.Second)
-
-            video_alert()
-            video_update()
-            time.Sleep(5 * time.Second)
+                    case <-time.After(60 * time.Second):
+                            fmt.Printf("Minute Timeout")
+                            display_update()
+                    
+            }
     }
 }
 func main() {
@@ -628,6 +731,7 @@ func main() {
 	cfgfile := flag.String("cfg","goratt.cfg","Config file")
 	flag.Parse()
 
+    uiEvent = make(chan UIEvent,10)
 	f, err := os.Open(*cfgfile)
 	decoder := yaml.NewDecoder(f)
 	err = decoder.Decode(&cfg)

@@ -142,8 +142,6 @@ func video_init() {
 
 func video_available() {
 
-	fmt.Println("Clearing framebuffer (16-bit)...")
-	clearFramebuffer(pixBuffer) // Clear the actual framebuffer directly
 
     // Background
 	dc.SetRGB(0, 0.5, 0)
@@ -229,7 +227,7 @@ func video_alert() {
 
 	dc.SetRGB(1, 0, 0)
     setFontSize(42)
-	dc.DrawStringAnchored("Unrecognized Tag", float64(WIDTH/2)+180, 200, 0.5, 0.5)
+	dc.DrawStringAnchored(alertMessage, float64(WIDTH/2)+180, 200, 0.5, 0.5)
 }
 
 func video_draw() {
