@@ -708,7 +708,6 @@ func display() {
                     case evt := <- uiEvent :
                       switch (evt.Event) {
                         case Event_Alert:
-                            alertMessage = "Access Denied"
                             video_alert()
                             video_update()
                             time.Sleep(3 * time.Second)

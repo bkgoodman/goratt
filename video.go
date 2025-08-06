@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
     "strings"
+    "golang.org/x/image/draw"
     _ "image/png" 
 	"github.com/d21d3q/framebuffer"
 	"github.com/fogleman/gg"
@@ -87,6 +88,70 @@ func loadImage(path string) (image.Image, error) {
     return img, nil
 }
 
+func loadAndScaleImage(filePath string, maxW, maxH int) (*image.RGBA, error, int, int) {
+	file, err := os.Open(filePath)
+	if err != nil {
+        fmt.Errorf("Error loading image \"%s\": %w\n",filePath,err)
+		return nil, err, 0, 0
+	}
+	defer file.Close()
+
+	originalImage, _, err := image.Decode(file)
+	if err != nil {
+        fmt.Errorf("Error decoding image \"%s\": %w\n",filePath,err)
+		return nil, err, 0, 0
+	}
+
+	// Get the original dimensions of the image
+	origBounds := originalImage.Bounds()
+	origWidth := origBounds.Dx()
+	origHeight := origBounds.Dy()
+
+	// Calculate the scaling factor
+	scaleFactor := 1.0
+	if maxW > 0 && origWidth > maxW {
+		scaleFactor = float64(maxW) / float64(origWidth)
+	}
+	if maxH > 0 && origHeight > maxH {
+		// If the height constraint results in a smaller scale, use that one
+		heightScale := float64(maxH) / float64(origHeight)
+		if heightScale < scaleFactor {
+			scaleFactor = heightScale
+		}
+	}
+
+	// If no constraints were specified or the image is already smaller,
+	// just use the original size.
+	if scaleFactor >= 1.0 {
+		return imageToRGBA(originalImage), nil, origWidth, origHeight
+	}
+
+	// Calculate the new dimensions
+	newWidth := int(float64(origWidth) * scaleFactor)
+	newHeight := int(float64(origHeight) * scaleFactor)
+
+	fmt.Printf("Scaling image from %dx%d to %dx%d\n", origWidth, origHeight, newWidth, newHeight)
+
+	// Create a new image with the target dimensions
+	downscaledImage := image.NewRGBA(image.Rect(0, 0, newWidth, newHeight))
+
+	// Use a high-quality scaler.
+	draw.CatmullRom.Scale(downscaledImage, downscaledImage.Bounds(), originalImage, originalImage.Bounds(), draw.Over, nil)
+
+	return downscaledImage, nil, newWidth, newHeight
+}
+
+// imageToRGBA converts an image.Image to *image.RGBA, if it's not already.
+func imageToRGBA(img image.Image) *image.RGBA {
+	if rgba, ok := img.(*image.RGBA); ok {
+		return rgba
+	}
+	bounds := img.Bounds()
+	rgba := image.NewRGBA(bounds)
+	draw.Draw(rgba, bounds, img, bounds.Min, draw.Src)
+	return rgba
+}
+
 var dc *gg.Context
 var pixBuffer []byte
 var backBuffer []byte
@@ -151,32 +216,33 @@ func video_available() {
 	dc.SetRGB(1, 1, 1)
 
     setFontSize(64)
-	dc.DrawStringAnchored("Room Available", float64(WIDTH/2), 280, 0.5, 0.5)
+    h := float64((HEIGHT-64)/2)
+	dc.DrawStringAnchored("Room Available", float64(WIDTH/2), h, 0.5, 0.5)
     setFontSize(32)
-	dc.DrawStringAnchored("Swipe fob to use room", float64(WIDTH/2), 340, 0.5, 0.5)
+    h+=50
+	dc.DrawStringAnchored("Swipe fob to use room", float64(WIDTH/2), h, 0.5, 0.5)
 
 
-    /* Update Time */
+    /* Lower Banner */
 
-    setFontSize(60)
+    setFontSize(42)
 	dc.SetRGB(0.3, 0.5, 0.3)
 	now := time.Now()
-    TIMEYPOS:=float64(550)
-	dc.DrawRectangle(0, TIMEYPOS-30, float64(WIDTH), 66)
+    TIMEYPOS:=float64(HEIGHT-76)
+	dc.DrawRectangle(0, TIMEYPOS, float64(WIDTH), 66)
 	dc.Fill()
 	dc.SetRGB(0, 0.25, 0)
 
 	now = time.Now()
-    formattedDateTime := now.Format("Jan-02 3:04pm")
-	dc.DrawStringAnchored(formattedDateTime, float64(WIDTH/2)+25, TIMEYPOS, 0.5, 0.5)
+    formattedDateTime := now.Format("Jan 2 3:04pm")
+	dc.DrawStringAnchored(formattedDateTime, float64(WIDTH/2), TIMEYPOS+30, 0.5, 0.5)
 
 
-    // User Banner
+    // Top User Banner
 	dc.SetRGB(0.3, 0.5, 0.3)
 	dc.DrawRectangle(0, 10, float64(WIDTH), 66)
 	dc.Fill()
 	dc.SetRGB(0.0, 0.0, 0.0)
-	//dc.DrawStringAnchored("Eric Roth", float64(WIDTH/2)+25, 40, 0.5, 0.5)
 
 }
 func video_comein() {
@@ -190,19 +256,19 @@ func video_comein() {
 
 	dc.SetRGB(1, 1, 1)
     setFontSize(64)
-	dc.DrawStringAnchored("Room in Use", float64(WIDTH/2), 300, 0.5, 0.5)
+    h := float64((HEIGHT-64)/2)
+	dc.DrawStringAnchored("Room in Use", float64(WIDTH/2), h, 0.5, 0.5)
 
 
-    /* Update Time */
-    setFontSize(60)
-
+    /* Lower Banner */
+    setFontSize(42)
 	dc.SetRGB(0.2, 0.2, 0.5)
-    TIMEYPOS:=float64(550)
-	dc.DrawRectangle(0, TIMEYPOS-30, float64(WIDTH), 66)
+    TIMEYPOS:=float64(HEIGHT-76)
+	dc.DrawRectangle(0, TIMEYPOS, float64(WIDTH), 66)
 	dc.Fill()
 
 	dc.SetRGB(0.0, 0.2, 0.0)
-	dc.DrawStringAnchored(HowLongAgo(lastEventTime), float64(WIDTH/2)+25, TIMEYPOS, 0.5, 0.5)
+	dc.DrawStringAnchored(HowLongAgo(lastEventTime), float64(WIDTH/2), TIMEYPOS+30, 0.5, 0.5)
 
 
     // User Banner
@@ -211,7 +277,7 @@ func video_comein() {
 	dc.DrawRectangle(0, 10, float64(WIDTH), 66)
 	dc.Fill()
 	dc.SetRGB(0.0, 0.0, 0.0)
-	dc.DrawStringAnchored(*occupiedBy, float64(WIDTH/2)+25, 40, 0.5, 0.5)
+	dc.DrawStringAnchored(*occupiedBy, float64(WIDTH/2), 40, 0.5, 0.5)
     }
 
 }
@@ -221,13 +287,15 @@ func video_alert() {
 	dc.Fill()
 
 
-    pngImage, err := loadImage("alert.png")
-    _ = err
-    dc.DrawImage(pngImage, 100, 80)
+    pngImage, err, w, h := loadAndScaleImage("alert.png",WIDTH/4,0)
+    if (err != nil) {
+            fmt.Errorf("Error loading image %w\n",err)
+    }
+    dc.DrawImage(pngImage, 20, (HEIGHT-h)/2)
 
 	dc.SetRGB(1, 0, 0)
     setFontSize(42)
-	dc.DrawStringAnchored(alertMessage, float64(WIDTH/2)+180, 200, 0.5, 0.5)
+	dc.DrawString(alertMessage, float64(20+w), 200)
 }
 
 func video_draw() {
@@ -244,7 +312,6 @@ func video_draw() {
 	dc.Fill()
     */
 
-	fmt.Println("Drawing text with gg (to 32-bit buffer)...")
 	dc.SetRGB(1, 1, 1)
 
 
@@ -257,17 +324,16 @@ func video_draw() {
 
 
 	// --- NEW: Convert 32-bit image to 16-bit framebuffer and blit ---
-	fmt.Println("Converting and blitting 32-bit image to 16-bit framebuffer...")
 
-    setFontSize(60)
+    setFontSize(42)
 
 	dc.SetRGB(1, 0.3, 0.3)
-    TIMEYPOS:=float64(550)
-	dc.DrawRectangle(0, TIMEYPOS-30, float64(WIDTH), 66)
+    TIMEYPOS:=float64(HEIGHT-76)
+	dc.DrawRectangle(0, TIMEYPOS, float64(WIDTH), 66)
 	dc.Fill()
 
 	dc.SetRGB(0.5, 0.0, 0.0)
-	dc.DrawStringAnchored(HowLongAgo(lastEventTime), float64(WIDTH/2)+25, TIMEYPOS, 0.5, 0.5)
+	dc.DrawStringAnchored(HowLongAgo(lastEventTime), float64(WIDTH/2), TIMEYPOS+30, 0.5, 0.5)
 
 
     // User Banner
@@ -276,13 +342,13 @@ func video_draw() {
 	dc.Fill()
     if (occupiedBy != nil) {
             dc.SetRGB(0.0, 0.0, 0.0)
-            dc.DrawStringAnchored(*occupiedBy, float64(WIDTH/2)+25, 40, 0.5, 0.5)
+            dc.DrawStringAnchored(*occupiedBy, float64(WIDTH/2), 40, 0.5, 0.5)
     }
 
 
-    pngImage, err := loadImage("DarkroomInUse.png")
+    pngImage, err, w, h := loadAndScaleImage("DarkroomInUse.png",(3*WIDTH)/4,0)
     _ = err
-    dc.DrawImage(pngImage, 60, 80)
+    dc.DrawImage(pngImage, (WIDTH-w) /2, (HEIGHT-h)/2)
 
     /* End Update Time */
 
