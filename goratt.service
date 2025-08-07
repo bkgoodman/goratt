@@ -1,5 +1,5 @@
 [Unit]
-Description=Storage Label Printer
+Description=Go RATT
 After=multi-user.target
 
 [Service]
@@ -7,6 +7,7 @@ WorkingDirectory=/home/bkg/goratt
 Type=idle
 User=root
 Restart=always
+ExecStartPre=/home/bkg/goratt/kbdstop.sh
 ExecStart=/home/bkg/goratt/goratt
 RestartSec=15s
 

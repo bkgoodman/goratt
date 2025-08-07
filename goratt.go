@@ -17,7 +17,9 @@ import (
 	"gopkg.in/yaml.v2"
 	"flag"
 	"encoding/json"
-  "github.com/hjkoskel/govattu"
+	gpiocdev "github.com/warthog618/go-gpiocdev"
+	// "github.com/warthog618/gpiod/device/rpi"
+   // "github.com/hjkoskel/govattu"
 	"time"
   	// "strings" 
 
@@ -329,9 +331,6 @@ func BadgeTag(id uint64) {
 			if (tag.Allowed) { access = "Allowed" }
 			fmt.Printf("Tag %d Member %s Access %s",id,tag.Member,access)
 
-			var topic string = fmt.Sprintf("ratt/status/node/%s/personality/access",cfg.ClientID)
-			var message string = fmt.Sprintf("{\"allowed\":tag.Allowed,\"member\":\"%s\"}",tag.Member)
-			client.Publish(topic,0,false,message)
 
 			if (tag.Allowed) {
 				//open_servo(cfg.ServoOpen, cfg.ServoClose, cfg.WaitSecs, cfg.Mode)
@@ -365,7 +364,7 @@ func BadgeTag(id uint64) {
 }
 
 // Read from KEYBOARD in simple 10h + cr format
-func readkdb_10h() {
+func readkbd(devtype int) {
 	fmt.Println("USB 10H Keyboard mode")
 	device,err := evdev.OpenFile(cfg.NFCdevice)
 	if (err != nil) {
@@ -395,9 +394,14 @@ func readkdb_10h() {
                 if (event.Value == 1) {
                         //log.Printf("received key event: %+v TYPE:%+v/%T", event,event.Type,event.Type)
                         if (event.Type == evdev.KeyEnter) {
-                                number, err := strconv.ParseUint(strbuf,16,64)
+                                var number uint64
+                                if (devtype == 0) {
+                                        number, err = strconv.ParseUint(strbuf,16,64)
+                                } else if (devtype == 1) {
+                                        number, err = strconv.ParseUint(strbuf,10,64)
+                                }
                                 number &= 0xffffffff
-                                log.Printf("Got 10h String %s BadgeId %d\n",strbuf,number)
+                                log.Printf("Got String %s BadgeId %d\n",strbuf,number)
                                 if (err == nil) {
                                         BadgeTag(number)
                                 } else {
@@ -496,6 +500,7 @@ func readrfid() uint64  {
 
 }
 
+
 func SafelightOn() {
    safelight = true
    lastEventTime = time.Now()
@@ -510,7 +515,17 @@ func SafelightOff() {
 }
 
 func Signin(user string) {
-    occupiedBy = &user
+    if (occupiedBy == nil) {
+            occupiedBy = &user
+			var topic string = fmt.Sprintf("ratt/status/node/%s/personality/login",cfg.ClientID)
+			var message string = fmt.Sprintf("{\"allowed\":true,\"member\":\"%s\"}",user)
+			client.Publish(topic,0,false,message)
+    } else {
+			var topic string = fmt.Sprintf("ratt/status/node/%s/personality/login",cfg.ClientID)
+			var message string = fmt.Sprintf("{\"allowed\":true,\"member\":\"%s\"}",occupiedBy)
+			client.Publish(topic,0,false,message)
+            occupiedBy = nil
+    }
     lastEventTime = time.Now()
     UpdateUser()
 
@@ -623,9 +638,12 @@ func NamedPipeListener() {
 func NFClistener() {
   if cfg.NFCmode=="pipe" {
           NamedPipeListener()
+  } else if cfg.NFCmode=="10d-kbd" {
+      // 10 decimal digits - USB Keyboard device
+      readkbd(1) 
   } else if cfg.NFCmode=="10h-kbd" {
       // 10 hex digits - USB Keyboard device
-      readkdb_10h() 
+      readkbd(0) 
   } else {
     for {
       // Default - Serial device w/ weird protocol
@@ -725,6 +743,17 @@ func display() {
             }
     }
 }
+
+
+
+func safelightCallback(evt gpiocdev.LineEvent) {
+        if (evt.Type == 1) {
+                SafelightOff()
+        } else {
+                SafelightOn()
+        }
+}
+
 func main() {
 	openflag := flag.Bool("holdopen",false,"Hold door open indefinitley")
 	cfgfile := flag.String("cfg","goratt.cfg","Config file")
@@ -750,8 +779,11 @@ func main() {
 			door_reset(false)
 		case "openlow":
 			door_reset(true)
+		case "":
+		case "none":
+			break
 		default:
-			panic("Mode in configfile must be \"servo\", \"openhigh\" or \"openlow\"")
+			panic("Mode in configfile must be \"none\", \"servo\", \"openhigh\" or \"openlow\"")
 	}
 
   if (cfg.LEDpipe != "") {
@@ -761,20 +793,45 @@ func main() {
     }
     defer  LEDfile.Close()
   }
+
+
+  	offset := 18
+	chip := "gpiochip0"
+	l, err := gpiocdev.RequestLine(chip, offset,
+		gpiocdev.WithPullUp,
+		gpiocdev.WithBothEdges,
+        gpiocdev.WithDebounce(10* time.Millisecond),
+		gpiocdev.WithEventHandler(safelightCallback))
+	if err != nil {
+		fmt.Printf("RequestLine returned error: %s\n", err)
+		if err == syscall.Errno(22) {
+			fmt.Println("Note that the WithPullUp option requires Linux 5.5 or later - check your kernel version.")
+		}
+		os.Exit(1)
+	}
+	defer l.Close()
+    // If we are already on
+    if ll,_ :=l.Value() ; ll  ==2  {
+            SafelightOn()
+    }
+    /*
     hw, err := govattu.Open()
     if err != nil {
       panic(err)
     }
 		hw.PinMode(23,govattu.ALToutput)
 		hw.PinMode(24,govattu.ALToutput)
-		hw.PinMode(25,govattu.ALTinput)
+		//hw.PinMode(25,govattu.ALTinput)
 		hw.PinSet(23)
 		hw.PinSet(24)
 		hw.ZeroPinEventDetectMask()
+        //hw.SetPinEventDetectMask(25, govattu.PINE_FALL|govattu.PINE_RISE)
 
 		if (*openflag) {
 				open_servo(cfg.ServoOpen, cfg.ServoClose, cfg.WaitSecs, cfg.Mode)
 		}
+        */
+        _ = openflag
 
 
 	// MQTT broker address
@@ -833,9 +890,9 @@ func main() {
 	ReadTagFile()
 	GetACLList()
 
-	hw.PinClear(23)
-	hw.PinClear(24)
-	hw.Close()
+	//hw.PinClear(23)
+	//hw.PinClear(24)
+	//hw.Close()
 
     LEDupdateIdleString(LEDconnectionLost)
     LEDwriteString(LEDconnectionLost)
@@ -852,9 +909,9 @@ func main() {
 	signal.Notify(c, syscall.SIGTERM)
 	//fmt.Println("Waitsignal")
 	<-c
-
 	fmt.Println("Got Terminate Signal")
 	// Disconnect from the MQTT broker
+    video_clear()
 	client.Disconnect(250)
 	fmt.Println("Disconnected from the MQTT broker")
     LEDwriteString(LEDterminated)

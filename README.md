@@ -48,7 +48,8 @@ All fields are manditory
 | NFCmode | Description |
 | ---------- | ------------- |
 | (Empty) | USB Serial Device. `NFCdevice` must be name of `/dev/ttyUSB0` |
-| `10h-kbd` | For 10h (hex) keyboard device. `NFCdevice` must be a `/dev/input/event0" device for this |
+| `10h-kbd` | For 10h (hex) keyboard device. `NFCdevice` must be a `/dev/input/eventX" device for this |
+| `10d-kbd` | For 10d (decimal) keyboard device. `NFCdevice` must be a `/dev/input/eventX" device for this |
 | `pipe` | Name Pipe (for debug mainly). `NFCdevice` should be named pipe file |
 
 # Neopixel Support

@@ -205,6 +205,10 @@ func video_init() {
 	clearFramebuffer(pixBuffer) // Clear the actual framebuffer directly
 }
 
+func video_clear() {
+	clearFramebuffer(pixBuffer) // Clear the actual framebuffer directly
+    video_update()
+}
 func video_available() {
 
 
@@ -258,6 +262,9 @@ func video_comein() {
     setFontSize(64)
     h := float64((HEIGHT-64)/2)
 	dc.DrawStringAnchored("Room in Use", float64(WIDTH/2), h, 0.5, 0.5)
+    setFontSize(32)
+    h+=50
+	dc.DrawStringAnchored("Swipe fob badge-out of room", float64(WIDTH/2), h, 0.5, 0.5)
 
 
     /* Lower Banner */
