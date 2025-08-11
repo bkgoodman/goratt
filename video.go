@@ -237,12 +237,16 @@ func video_available() {
 
             h+=35
             dc.SetRGB(1, 1, 1)
-            dc.DrawRectangle(20, h, float64(WIDTH-40), 180)
+            dc.DrawRoundedRectangle(50, h+20, float64(WIDTH-100), 180,12)
             dc.Fill()
-            dc.SetRGB(0.2, 0.5, 0.2)
-            h+=20
-            dc.DrawStringAnchored("-Next Reservaion -", float64(WIDTH/2), h, 0.5, 0.5)
+            dc.SetRGB(0.3, 0.6, 0.3)
+            dc.DrawRoundedRectangle(200, h-5, float64(WIDTH-400), 48,24)
+            dc.Fill()
+            dc.SetRGB(0.1, 0.3, 0.1)
+            h+=17
+            dc.DrawStringAnchored("-Next Reservation-", float64(WIDTH/2), h, 0.5, 0.5)
             h += 55
+            dc.SetRGB(0.2, 0.5, 0.2)
             dc.DrawStringAnchored(nextCalEntry.SUMMARY, float64(WIDTH/2), h, 0.5, 0.5)
             h+=40
             dc.DrawStringAnchored(nextCalEntry.ORGANIZER, float64(WIDTH/2), h, 0.5, 0.5)
