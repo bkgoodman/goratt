@@ -70,6 +70,7 @@ type RattConfig struct {
    ApiPassword string `yaml:"ApiPassword"`
    Resource string `yaml:"Resource"`
    Mode string `yaml:"Mode"`
+   CalendarURL string `yaml:"CalendarURL"`
 
    TagFile string `yaml:"TagFile"`
    ServoClose int `yaml:"ServoClose"`
@@ -242,6 +243,69 @@ func GetACLList() {
 
 }
 
+type CalEntry struct {
+   	SUMMARY   string `json:"SUMMARY"`
+	START     string `json:"START"`
+	END       string `json:"END"`
+	ORGANIZER string `json:"ORGANIZER"`
+	CODE      int64  `json:"CODE"`
+	DOW       string `json:"DOW"`
+	DEVICE    string `json:"DEVICE"`
+	TIME      string `json:"TIME"`
+	WHEN      string `json:"WHEN"`
+}
+
+var nextCalEntry *CalEntry
+var nextCalFetch time.Time
+
+func FetchCalendarURL() {
+        if nextCalFetch.After(time.Now()) {
+                fmt.Println("CalFetchTooSoon")
+                return
+        }
+        if cfg.CalendarURL == "" {
+                return
+        }
+
+    fmt.Println("CalFetchNow")
+    nextCalFetch = time.Now().Add(60 * 15 * time.Second)
+            // Make an HTTP GET request to the URL.
+    response, err := http.Get(cfg.CalendarURL)
+    if err != nil {
+        log.Fatalf("Failed to fetch URL: %v", err)
+    }
+    defer response.Body.Close()
+
+    // Check for a successful HTTP status code (e.g., 200 OK).
+    if response.StatusCode != http.StatusOK {
+        log.Fatalf("Received non-200 status code: %d", response.StatusCode)
+    }
+
+    // Create an instance of your struct to hold the data.
+    var cal []CalEntry
+
+    // Use a JSON decoder to unmarshal the response body into the struct.
+    err = json.NewDecoder(response.Body).Decode(&cal)
+    if err != nil {
+        log.Fatalf("Failed to decode JSON: %v", err)
+    }
+
+    	// Iterate over the slice and print the data.
+	for _, item := range cal {
+		fmt.Printf("Summary: %s\n", item.SUMMARY)
+		fmt.Printf("Organizer: %s\n", item.ORGANIZER)
+		fmt.Printf("When: %s\n", item.WHEN)
+		fmt.Println("--------------------")
+	}
+
+    if len(cal) != 0 {
+            nextCalEntry = &cal[0]
+    } else {
+            nextCalEntry = nil
+    }
+
+}
+
 func ReadTagFile() {
 	aclfileMutex.Lock()
 	defer aclfileMutex.Unlock()
@@ -393,7 +457,10 @@ func readkbd(devtype int) {
 			case evdev.KeyType:
                 if (event.Value == 1) {
                         //log.Printf("received key event: %+v TYPE:%+v/%T", event,event.Type,event.Type)
-                        if (event.Type == evdev.KeyEnter) {
+                        // We do this so we can map a GPIO as an escape key easily if we want
+                        if (event.Type == evdev.KeyEscape) {
+                                Signout()
+                        } else if (event.Type == evdev.KeyEnter) {
                                 var number uint64
                                 if (devtype == 0) {
                                         number, err = strconv.ParseUint(strbuf,16,64)
@@ -421,7 +488,6 @@ func readkbd(devtype int) {
 		}
 	}
 }
-
 
 // THis reads from the weird USB RFID Serial Protocol w/ Weird Encoding
 func readrfid() uint64  {
@@ -521,7 +587,7 @@ func Signin(user string) {
 			var message string = fmt.Sprintf("{\"allowed\":true,\"member\":\"%s\"}",user)
 			client.Publish(topic,0,false,message)
     } else {
-			var topic string = fmt.Sprintf("ratt/status/node/%s/personality/login",cfg.ClientID)
+			var topic string = fmt.Sprintf("ratt/status/node/%s/personality/logout",cfg.ClientID)
 			var message string = fmt.Sprintf("{\"allowed\":true,\"member\":\"%s\"}",occupiedBy)
 			client.Publish(topic,0,false,message)
             occupiedBy = nil
@@ -720,8 +786,10 @@ func display_update() {
 // Any display updates must be done through
 // uiEvent channel so they can be queued
 func display() {
+    FetchCalendarURL()
     display_update()
     for {
+            FetchCalendarURL()
             select {
                     case evt := <- uiEvent :
                       switch (evt.Event) {

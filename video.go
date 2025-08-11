@@ -219,12 +219,37 @@ func video_available() {
 
 	dc.SetRGB(1, 1, 1)
 
-    setFontSize(64)
-    h := float64((HEIGHT-64)/2)
-	dc.DrawStringAnchored("Room Available", float64(WIDTH/2), h, 0.5, 0.5)
-    setFontSize(32)
-    h+=50
-	dc.DrawStringAnchored("Swipe fob to use room", float64(WIDTH/2), h, 0.5, 0.5)
+    if (nextCalEntry == nil) {
+            setFontSize(64)
+            h := float64((HEIGHT-64)/2)
+            dc.DrawStringAnchored("Room Available", float64(WIDTH/2), h, 0.5, 0.5)
+            setFontSize(32)
+            h+=50
+            dc.DrawStringAnchored("Swipe fob to use room", float64(WIDTH/2), h, 0.5, 0.5)
+    } else {
+            setFontSize(64)
+            h := float64(110)
+            dc.DrawStringAnchored("Room Available", float64(WIDTH/2), h, 0.5, 0.5)
+            setFontSize(32)
+            h+=50
+            dc.DrawStringAnchored("Swipe fob to use room", float64(WIDTH/2), h, 0.5, 0.5)
+
+
+            h+=35
+            dc.SetRGB(1, 1, 1)
+            dc.DrawRectangle(20, h, float64(WIDTH-40), 180)
+            dc.Fill()
+            dc.SetRGB(0.2, 0.5, 0.2)
+            h+=20
+            dc.DrawStringAnchored("-Next Reservaion -", float64(WIDTH/2), h, 0.5, 0.5)
+            h += 55
+            dc.DrawStringAnchored(nextCalEntry.SUMMARY, float64(WIDTH/2), h, 0.5, 0.5)
+            h+=40
+            dc.DrawStringAnchored(nextCalEntry.ORGANIZER, float64(WIDTH/2), h, 0.5, 0.5)
+            h+=40
+            dc.DrawStringAnchored(nextCalEntry.WHEN, float64(WIDTH/2), h, 0.5, 0.5)
+
+    }
 
 
     /* Lower Banner */
@@ -284,7 +309,7 @@ func video_comein() {
 	dc.DrawRectangle(0, 10, float64(WIDTH), 66)
 	dc.Fill()
 	dc.SetRGB(0.0, 0.0, 0.0)
-	dc.DrawStringAnchored(*occupiedBy, float64(WIDTH/2), 40, 0.5, 0.5)
+	dc.DrawStringAnchored(strings.Replace(*occupiedBy,"."," ",-1), float64(WIDTH/2), 40, 0.5, 0.5)
     }
 
 }
