@@ -14,6 +14,14 @@ import (
 	"github.com/fogleman/gg"
 )
 
+const (
+        OS_WIDTH = 200
+        OS_HEIGHT = 20
+)
+
+const (
+        FONT_STRING = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+)
 // This clear function works for any BPP by just zeroing out bytes, resulting in black
 func clearFramebuffer(buf []byte) {
 	for i := range buf {
@@ -22,7 +30,7 @@ func clearFramebuffer(buf []byte) {
 }
 
 func setFontSize(size int) {
-	fontPathGG := "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+	fontPathGG := FONT_STRING
 	fontSizeGG := float64(size)
     err := dc.LoadFontFace(fontPathGG, fontSizeGG)
 	if err != nil {
@@ -189,6 +197,7 @@ func video_init() {
 	bitsPerPixel := varInfo.BitsPerPixel
 	lineLengthBytes = int(fixedInfo.LineLength) // Stride in bytes for framebuffer
 
+    // backBuffer is where we will blit the data to, to quickly copy out to video FB
     backBuffer =  make([]byte, HEIGHT*lineLengthBytes)
 
 	fmt.Printf("Framebuffer opened:\n")
@@ -203,6 +212,51 @@ func video_init() {
 	dc = gg.NewContextForRGBA(rgbaImage) // gg context now draws to this 32-bit image
 	// --- END NEW ---
 	clearFramebuffer(pixBuffer) // Clear the actual framebuffer directly
+}
+
+
+// Offscreen buffer for FAST copies - realtime UI updates
+var os_backBuffer []byte // This is where we will blit ofscreen data to for fast copy-out
+func init_offscreen_buffer() {
+
+	// --- NEW: Create a separate 32-bit RGBA image buffer for drawing ---
+	// This is where gg and x/image/font will draw. It's in system RAM, not directly FB.
+    rgbaImage := image.NewRGBA(image.Rect(0, 0, OS_WIDTH, OS_HEIGHT))
+    os_dc := gg.NewContextForRGBA(rgbaImage) // gg context now draws to this 32-bit image
+	// --- END NEW ---
+	os_dc.SetRGB(0, 0.5, 0)
+	os_dc.DrawRectangle(0, 0, OS_WIDTH, OS_HEIGHT)
+	os_dc.Fill()
+
+    err := os_dc.LoadFontFace(FONT_STRING, 32)
+	if err != nil {
+		log.Fatalf("Failed to load font face '%s' for gg: %v. Ensure the font file is present and accessible.", FONT_STRING, err)
+	}
+
+    os_dc.DrawString("@", 20,20)
+}
+
+var knobpos int = 0
+func video_updateknob(evt UIEvent) {
+    v:= fmt.Sprintf("%d",knobpos)
+    setFontSize(32)
+	dc.SetRGB(0, 0, 1)
+	dc.DrawRectangle(120, 120-32, 64, 64)
+    dc.Fill()
+	dc.SetRGB(1, 1, 1)
+    switch (evt.Name) {
+            case "cw":
+                    knobpos += 1
+                    break
+            case "ccw":
+                    knobpos -= 1
+                    break
+            default:
+                    knobpos = 0
+    }
+    dc.DrawString(v, 120,120)
+    fmt.Println(v)
+    video_update()
 }
 
 func video_clear() {

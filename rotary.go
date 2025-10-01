@@ -35,8 +35,10 @@ func RotaryHandler(evt gpiocdev.LineEvent) {
     if evt.Offset == rotary_clkLine.Offset() && evt.Type == gpiocdev.LineEventRisingEdge {
         if lastDT == 0 {
             fmt.Println("Clockwise")
+            uiEvent <- UIEvent { Event: Event_Encoderknob, Name:"cw" }
         } else {
             fmt.Println("Counter-clockwise")
+            uiEvent <- UIEvent { Event: Event_Encoderknob, Name:"ccw" }
         }
     }
 }
@@ -61,7 +63,7 @@ func rotary_init() {
     if err != nil {
         panic(err)
     }
-    defer rotary_dtLine.Close()
+    //defer rotary_dtLine.Close()
 
     // Request CLK line with edge detection
     rotary_clkLine, err = gpiocdev.RequestLine(chip, rotaryCLK,
@@ -72,7 +74,7 @@ func rotary_init() {
     if err != nil {
         panic(err)
     }
-    defer rotary_clkLine.Close()
+    //defer rotary_clkLine.Close()
 
     // Request button line
     _, err = gpiocdev.RequestLine(chip, rotaryKnob,
@@ -87,6 +89,6 @@ func rotary_init() {
     }
 
     // Keep the program alive
-    select {}
+    //select {}
 }
 

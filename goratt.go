@@ -44,6 +44,7 @@ var watchdog time.Time
 const (
         Event_Update = iota
         Event_Alert
+        Event_Encoderknob
 )
 
 var occupiedBy *string
@@ -817,6 +818,9 @@ func display() {
                             time.Sleep(3 * time.Second)
                             display_update()
                             break
+                        case Event_Encoderknob:
+                             video_updateknob(evt)
+                             break
                         default:
                                 display_update()
                     
@@ -844,7 +848,6 @@ func badgeoutCallback(evt gpiocdev.LineEvent) {
         Signout()
 }
 func main() {
-        rotary_init();
 	openflag := flag.Bool("holdopen",false,"Hold door open indefinitley")
 	cfgfile := flag.String("cfg","goratt.cfg","Config file")
 	flag.Parse()
@@ -993,6 +996,7 @@ func main() {
 
 	ReadTagFile()
 	GetACLList()
+    rotary_init();
 
 	//hw.PinClear(23)
 	//hw.PinClear(24)
