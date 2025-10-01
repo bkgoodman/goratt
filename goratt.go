@@ -844,6 +844,7 @@ func badgeoutCallback(evt gpiocdev.LineEvent) {
         Signout()
 }
 func main() {
+        rotary_init();
 	openflag := flag.Bool("holdopen",false,"Hold door open indefinitley")
 	cfgfile := flag.String("cfg","goratt.cfg","Config file")
 	flag.Parse()
