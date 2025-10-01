@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"log"
 	"os"
+    "os/exec"
 	"strconv"
 	"bufio"
     "strings"
-	 "os/signal"
-     "io"
+	"os/signal"
+    "io"
 	"crypto/x509"
 	"io/ioutil"
     "syscall"
@@ -37,6 +38,7 @@ import (
 
 var client mqtt.Client
 var alertMessage string
+var watchdog time.Time
 
 
 const (
@@ -260,16 +262,14 @@ var nextCalFetch time.Time
 
 func FetchCalendarURL() {
         if nextCalFetch.After(time.Now()) {
-                fmt.Println("CalFetchTooSoon")
                 return
         }
         if cfg.CalendarURL == "" {
                 return
         }
 
-    fmt.Println("CalFetchNow")
     nextCalFetch = time.Now().Add(60 * 15 * time.Second)
-            // Make an HTTP GET request to the URL.
+    // Make an HTTP GET request to the URL.
     response, err := http.Get(cfg.CalendarURL)
     if err != nil {
         log.Fatalf("Failed to fetch URL: %v", err)
@@ -353,13 +353,26 @@ func onConnectHandler(client mqtt.Client) {
     // Slow Blue Pulse
     LEDupdateIdleString(LEDnormalIdle)
     LEDwriteString(LEDnormalIdle)
+    petWatchdog()
 
+}
+func watchdogHandler() {
+    petWatchdog()
+    for {
+        fmt.Println("WatchdogCheck")
+        if time.Now().After(watchdog) {
+            log.Println("WATCHOG EXPIRED -- REBOOTING!!!")
+            c := exec.Command("/usr/sbin/reboot")
+            c.Run()
+        }
+        time.Sleep(time.Minute)
+    }
 }
 
 func onConnectionLost(client mqtt.Client, err error) {
 	// Panic - because a restart will fix???
 	// panic(fmt.Errorf("MQTT CONNECTION LOST: %s",err))
-	fmt.Printf("MQTT CONNECTION LOST: %s",err)
+	log.Printf("MQTT CONNECTION LOST: %s",err)
     // Slow Yellow Wink
     LEDupdateIdleString(LEDconnectionLost)
     LEDwriteString(LEDconnectionLost)
@@ -369,10 +382,15 @@ func onMessageReceived(client mqtt.Client, message mqtt.Message) {
 	//fmt.Printf("Message: %s\n", message.Payload())
 
 	// Is this aun update ACL message? If so - Update
+    petWatchdog()
 	if (message.Topic() == "ratt/control/broadcast/acl/update") {
-		fmt.Println("Got ACL Update message")
+		log.Println("Got ACL Update message")
 		GetACLList()
 	}
+}
+
+func petWatchdog() {
+    watchdog = time.Now().Add(3 * time.Hour)
 }
 
 func PingSender() {
@@ -393,7 +411,7 @@ func BadgeTag(id uint64) {
 			found = true
 			access := "Denied"
 			if (tag.Allowed) { access = "Allowed" }
-			fmt.Printf("Tag %d Member %s Access %s",id,tag.Member,access)
+			log.Printf("Tag %d Member %s Access %s",id,tag.Member,access)
 
 
 			if (tag.Allowed) {
@@ -409,7 +427,7 @@ func BadgeTag(id uint64) {
 	}
 
 	if (found == false) {
-		fmt.Println("Tag not found",id)
+		log.Println("Tag not found",id)
         TagNotFound()
 	}
     /*
@@ -429,7 +447,7 @@ func BadgeTag(id uint64) {
 
 // Read from KEYBOARD in simple 10h + cr format
 func readkbd(devtype int) {
-	fmt.Println("USB 10H Keyboard mode")
+	log.Println("USB 10H Keyboard mode")
 	device,err := evdev.OpenFile(cfg.NFCdevice)
 	if (err != nil) {
 		log.Fatal("Error Opening NFC device : ",err)
@@ -438,10 +456,10 @@ func readkbd(devtype int) {
 	defer device.Close()
 
     
-    fmt.Printf("Opened keyboard device: %s\n", device.Name()) // Device name from evdev
-	fmt.Printf("Vendor: 0x%04x, Product: 0x%04x\n", device.ID().Vendor, device.ID().Product)
-	fmt.Println("Listening for keyboard events. Press keys to see output.")
-	fmt.Println("Press Ctrl+C to exit.")
+    log.Printf("Opened keyboard device: %s\n", device.Name()) // Device name from evdev
+	log.Printf("Vendor: 0x%04x, Product: 0x%04x\n", device.ID().Vendor, device.ID().Product)
+	log.Println("Listening for keyboard events. Press keys to see output.")
+	log.Println("Press Ctrl+C to exit.")
     ch := device.Poll(context.Background())
     strbuf := ""
     loop:
@@ -822,6 +840,9 @@ func safelightCallback(evt gpiocdev.LineEvent) {
         }
 }
 
+func badgeoutCallback(evt gpiocdev.LineEvent) {
+        Signout()
+}
 func main() {
 	openflag := flag.Bool("holdopen",false,"Hold door open indefinitley")
 	cfgfile := flag.String("cfg","goratt.cfg","Config file")
@@ -863,9 +884,8 @@ func main() {
   }
 
 
-  	offset := 18
 	chip := "gpiochip0"
-	l, err := gpiocdev.RequestLine(chip, offset,
+	l, err := gpiocdev.RequestLine(chip, 18,
 		gpiocdev.WithPullUp,
 		gpiocdev.WithBothEdges,
         gpiocdev.WithDebounce(10* time.Millisecond),
@@ -878,6 +898,21 @@ func main() {
 		os.Exit(1)
 	}
 	defer l.Close()
+
+	l, err = gpiocdev.RequestLine(chip, 23,
+		gpiocdev.WithPullUp,
+		gpiocdev.WithBothEdges,
+        gpiocdev.WithDebounce(10* time.Millisecond),
+		gpiocdev.WithEventHandler(badgeoutCallback))
+	if err != nil {
+		fmt.Printf("RequestLine returned error: %s\n", err)
+		if err == syscall.Errno(22) {
+			fmt.Println("Note that the WithPullUp option requires Linux 5.5 or later - check your kernel version.")
+		}
+		os.Exit(1)
+	}
+	defer l.Close()
+
     // If we are already on
     if ll,_ :=l.Value() ; ll  ==2  {
             SafelightOn()
@@ -965,6 +1000,7 @@ func main() {
     LEDupdateIdleString(LEDconnectionLost)
     LEDwriteString(LEDconnectionLost)
 
+    go watchdogHandler()
     go mqttconnect()
 	go NFClistener()
 	go PingSender()

@@ -280,9 +280,7 @@ func video_available() {
 }
 func video_comein() {
 
-	fmt.Println("Clearing framebuffer (16-bit)...")
 
-	fmt.Println("Drawing a red Background")
 	dc.SetRGB(0, 0, 0.5)
 	dc.DrawRectangle(0, 0, 1024, 600)
 	dc.Fill()
@@ -336,7 +334,6 @@ func video_alert() {
 
 func video_draw() {
 
-	fmt.Println("Drawing a red Background")
 	dc.SetRGB(1, 0, 0)
 	dc.DrawRectangle(0, 0, 1024, 600)
 	dc.Fill()
@@ -426,6 +423,4 @@ func video_update() {
 
         //time.Sleep(1 * time.Second)
     // for }
-	fmt.Println("Done. The framebuffer content should be visible.")
-	fmt.Println("The program will exit in 5 seconds.")
 }
