@@ -2,8 +2,8 @@
 package main
 
 import (
-    "fmt"
     "time"
+    "sync/atomic"
 
     "github.com/warthog618/go-gpiocdev"
 )
@@ -13,6 +13,7 @@ var rotary_clkLine *gpiocdev.Line
 
 var lastCLK, lastDT int
 
+var knobpos int64 = 0
 func RotaryHandler(evt gpiocdev.LineEvent) {
     var newState int
     if evt.Type == gpiocdev.LineEventRisingEdge {
@@ -34,12 +35,13 @@ func RotaryHandler(evt gpiocdev.LineEvent) {
     // For example, on CLK edge:
     if evt.Offset == rotary_clkLine.Offset() && evt.Type == gpiocdev.LineEventRisingEdge {
         if lastDT == 0 {
-            fmt.Println("Clockwise")
+            atomic.AddInt64(&knobpos, 1)
             uiEvent <- UIEvent { Event: Event_Encoderknob, Name:"cw" }
         } else {
-            fmt.Println("Counter-clockwise")
+            atomic.AddInt64(&knobpos, -1)
             uiEvent <- UIEvent { Event: Event_Encoderknob, Name:"ccw" }
         }
+        //fmt.Printf("Knob %d\n",knobpos)
     }
 }
 
@@ -49,8 +51,8 @@ func rotary_init() {
     rotaryKnob := 13
     chip := "gpiochip0"
 
-    debounceRotary := 5 * time.Millisecond
-    debounceButton := 10 * time.Millisecond
+    debounceRotary := 250 * time.Microsecond
+    debounceButton := 2 * time.Millisecond
 
     var err error
 
@@ -82,7 +84,7 @@ func rotary_init() {
         gpiocdev.WithFallingEdge,
         gpiocdev.WithDebounce(debounceButton),
         gpiocdev.WithEventHandler(func(evt gpiocdev.LineEvent) {
-            fmt.Println("Button pressed")
+            uiEvent <- UIEvent { Event: Event_Encoderknob, Name:"button" }
         }))
     if err != nil {
         panic(err)

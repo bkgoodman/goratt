@@ -819,6 +819,9 @@ func display() {
                             display_update()
                             break
                         case Event_Encoderknob:
+                             if (evt.Name == "button") {
+                                     knobpos=0
+                             }
                              video_updateknob(evt)
                              break
                         default:

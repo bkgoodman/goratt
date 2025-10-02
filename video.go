@@ -236,7 +236,6 @@ func init_offscreen_buffer() {
     os_dc.DrawString("@", 20,20)
 }
 
-var knobpos int = 0
 func video_updateknob(evt UIEvent) {
     v:= fmt.Sprintf("%d",knobpos)
     setFontSize(32)
@@ -244,19 +243,9 @@ func video_updateknob(evt UIEvent) {
 	dc.DrawRectangle(120, 120-32, 64, 64)
     dc.Fill()
 	dc.SetRGB(1, 1, 1)
-    switch (evt.Name) {
-            case "cw":
-                    knobpos += 1
-                    break
-            case "ccw":
-                    knobpos -= 1
-                    break
-            default:
-                    knobpos = 0
-    }
     dc.DrawString(v, 120,120)
-    fmt.Println(v)
-    video_update()
+    video_partial_update(120,120-32,64,64)
+    copy(pixBuffer,backBuffer)
 }
 
 func video_clear() {
@@ -442,13 +431,18 @@ func video_draw() {
 }
 
 func video_update() {
-
+    video_partial_update(0,0,HEIGHT,WIDTH)
+    copy(pixBuffer,backBuffer)
+}
+func video_partial_update(xStart int, yStart int, height int, width int) {
 	// Assuming common RGB565 format for 16-bit framebuffer, and Little Endian byte order.
 	// You might need to adjust the conversion formula or byte order (binary.BigEndian)
 	// if your framebuffer uses a different 16-bit format (e.g., ARGB1555) or byte order.
 	// See varInfo.Red.Offset, varInfo.Green.Offset, etc. for precise format.
-	for y := 0; y < HEIGHT; y++ {
-		for x := 0; x < WIDTH; x++ {
+    height += yStart
+    width += xStart
+	for y := yStart; y < height; y++ {
+		for x := xStart; x < width; x++ {
 			// Get 32-bit RGBA pixel from the in-memory image
 			r, g, b, _ := rgbaImage.At(x, y).RGBA() // Returns 0-65535, so convert to 0-255
 			
@@ -470,7 +464,11 @@ func video_update() {
 		}
 	}
 
-    copy(pixBuffer,backBuffer)
+    if ((xStart==0) && (yStart==0) && (width == WIDTH) && (height == HEIGHT)) {
+            copy(pixBuffer,backBuffer)
+    } else {
+            copy(pixBuffer,backBuffer)
+    }
 
 
 	// --- END NEW BLITTING ---
