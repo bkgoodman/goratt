@@ -1,5 +1,6 @@
 package main
 
+
 import (
 	"encoding/binary" // For byte order conversion (PutUint16)
 	"fmt"
@@ -37,6 +38,8 @@ func setFontSize(size int) {
 		log.Fatalf("Failed to load font face '%s' for gg: %v. Ensure the font file is present and accessible.", fontPathGG, err)
 	}
 }
+
+
 
 func HowLongAgo(t time.Time) string {
 	// Calculate the duration since the given time.
@@ -137,8 +140,6 @@ func loadAndScaleImage(filePath string, maxW, maxH int) (*image.RGBA, error, int
 	// Calculate the new dimensions
 	newWidth := int(float64(origWidth) * scaleFactor)
 	newHeight := int(float64(origHeight) * scaleFactor)
-
-	fmt.Printf("Scaling image from %dx%d to %dx%d\n", origWidth, origHeight, newWidth, newHeight)
 
 	// Create a new image with the target dimensions
 	downscaledImage := image.NewRGBA(image.Rect(0, 0, newWidth, newHeight))
@@ -252,75 +253,6 @@ func video_clear() {
 	clearFramebuffer(pixBuffer) // Clear the actual framebuffer directly
     video_update()
 }
-func video_available() {
-
-
-    // Background
-	dc.SetRGB(0, 0.5, 0)
-	dc.DrawRectangle(0, 0, 1024, 600)
-	dc.Fill()
-
-	dc.SetRGB(1, 1, 1)
-
-    if (nextCalEntry == nil) {
-            setFontSize(64)
-            h := float64((HEIGHT-64)/2)
-            dc.DrawStringAnchored("Room Available", float64(WIDTH/2), h, 0.5, 0.5)
-            setFontSize(32)
-            h+=50
-            dc.DrawStringAnchored("Swipe fob to use room", float64(WIDTH/2), h, 0.5, 0.5)
-    } else {
-            setFontSize(64)
-            h := float64(110)
-            dc.DrawStringAnchored("Room Available", float64(WIDTH/2), h, 0.5, 0.5)
-            setFontSize(32)
-            h+=50
-            dc.DrawStringAnchored("Swipe fob to use room", float64(WIDTH/2), h, 0.5, 0.5)
-
-
-            h+=35
-            dc.SetRGB(1, 1, 1)
-            dc.DrawRoundedRectangle(50, h+20, float64(WIDTH-100), 180,12)
-            dc.Fill()
-            dc.SetRGB(0.3, 0.6, 0.3)
-            dc.DrawRoundedRectangle(200, h-5, float64(WIDTH-400), 48,24)
-            dc.Fill()
-            dc.SetRGB(0.1, 0.3, 0.1)
-            h+=17
-            dc.DrawStringAnchored("-Next Reservation-", float64(WIDTH/2), h, 0.5, 0.5)
-            h += 55
-            dc.SetRGB(0.2, 0.5, 0.2)
-            dc.DrawStringAnchored(nextCalEntry.SUMMARY, float64(WIDTH/2), h, 0.5, 0.5)
-            h+=40
-            dc.DrawStringAnchored(nextCalEntry.ORGANIZER, float64(WIDTH/2), h, 0.5, 0.5)
-            h+=40
-            dc.DrawStringAnchored(nextCalEntry.WHEN, float64(WIDTH/2), h, 0.5, 0.5)
-
-    }
-
-
-    /* Lower Banner */
-
-    setFontSize(42)
-	dc.SetRGB(0.3, 0.5, 0.3)
-	now := time.Now()
-    TIMEYPOS:=float64(HEIGHT-76)
-	dc.DrawRectangle(0, TIMEYPOS, float64(WIDTH), 66)
-	dc.Fill()
-	dc.SetRGB(0, 0.25, 0)
-
-	now = time.Now()
-    formattedDateTime := now.Format("Jan 2 3:04pm")
-	dc.DrawStringAnchored(formattedDateTime, float64(WIDTH/2), TIMEYPOS+30, 0.5, 0.5)
-
-
-    // Top User Banner
-	dc.SetRGB(0.3, 0.5, 0.3)
-	dc.DrawRectangle(0, 10, float64(WIDTH), 66)
-	dc.Fill()
-	dc.SetRGB(0.0, 0.0, 0.0)
-
-}
 func video_comein() {
 
 
@@ -357,22 +289,6 @@ func video_comein() {
 	dc.DrawStringAnchored(strings.Replace(*occupiedBy,"."," ",-1), float64(WIDTH/2), 40, 0.5, 0.5)
     }
 
-}
-func video_alert() {
-	dc.SetRGB(1, 1, 0)
-	dc.DrawRectangle(0, 0, 1024, 600)
-	dc.Fill()
-
-
-    pngImage, err, w, h := loadAndScaleImage("alert.png",WIDTH/4,0)
-    if (err != nil) {
-            fmt.Errorf("Error loading image %w\n",err)
-    }
-    dc.DrawImage(pngImage, 20, (HEIGHT-h)/2)
-
-	dc.SetRGB(1, 0, 0)
-    setFontSize(42)
-	dc.DrawString(alertMessage, float64(20+w), 200)
 }
 
 func video_draw() {

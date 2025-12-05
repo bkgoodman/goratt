@@ -84,7 +84,7 @@ func rotary_init() {
         gpiocdev.WithFallingEdge,
         gpiocdev.WithDebounce(debounceButton),
         gpiocdev.WithEventHandler(func(evt gpiocdev.LineEvent) {
-            uiEvent <- UIEvent { Event: Event_Encoderknob, Name:"button" }
+                uiEvent <- UIEvent { Event: Event_Button, Param: Button_Knob, Name:"button" }
         }))
     if err != nil {
         panic(err)
