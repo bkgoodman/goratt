@@ -7,6 +7,9 @@ Go-based RATT client
 1. Clone repo
 2. `go build`
 
+For ARM (Raspberry Pi) builds are: `GOARCH=arm go build`
+(I think this does 32 bit. `arm64` for 64 bit builds)
+
 # Configure
 
 1. Copy `example.cfg` to `goratt.cfg`
@@ -39,7 +42,7 @@ All fields are manditory
 | Mode  | "Servo", "openhigh" or "openlow" |
 | TagFile | Path to file to store allowed tags on local system |
 | NFCdevice |  Device file of NFC reader for tags swiped in. /dev/tty for local keyboard, or /dev/ttyUSB0, etc |
-| NFCmode |  Use "10h-kbd" for 10h (hex) keyboard device. `NFCdevce` must be a `/dev/input/event0" device for this |
+| NFCmode |  Type of NFC device - see NFCmode table below |
 | DoorPin |  Pin Number for Door open or servo (Defaults to 18) |
 | LEDpipe | Filename for named pipe for LED commands |
 
@@ -49,6 +52,11 @@ All fields are manditory
 Neopixels are supported only through an external program to drive them. See [RPi Neopixel Tool](http://github.com/bkgoodman/rpi-neopixel-tool.git)
 
 Coordination is necessary when starting neopixel and doorlock services, for example in systemd files, notice that one is dependent on the other:
+
+# NFCmode
+Different modes for different devices
+| `10h-kbd` | for 10h (hex) keyboard device. `NFCdevce` must be a `/dev/input/event0" device for this |
+| `wiegland` | External RFIDs like for doorbot. Serial Wegland protocol. Device usually `/dev/serial0` |
 
 ## Doorlock
 ```
