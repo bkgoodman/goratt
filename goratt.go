@@ -360,8 +360,8 @@ func NFClistener() {
 			if err != nil {
 				fmt.Println("Weigland error", err)
 			} else {
-				fmt.Println("Got RFID", tag)
 				if tag != 0 {
+				fmt.Println("Got RFID", tag)
 					BadgeTag(tag)
 				}
 			}

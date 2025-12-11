@@ -24,7 +24,11 @@ func BadgeTag(id uint64) {
 			fmt.Printf("Tag %d Member %s Access %s",id,tag.Member,access)
 
 			var topic string = fmt.Sprintf("ratt/status/node/%s/personality/access",cfg.ClientID)
-			var message string = fmt.Sprintf("{\"allowed\":%d,\"member\":\"%s\"}",tag.Allowed,tag.Member)
+      var allowedValue int
+      if tag.Allowed {
+          allowedValue = 1
+      }
+			var message string = fmt.Sprintf("{\"allowed\":%d,\"member\":\"%s\"}",allowedValue,tag.Member)
 			client.Publish(topic,0,false,message)
 
 			if (tag.Allowed) {

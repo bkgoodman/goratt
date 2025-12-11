@@ -38,7 +38,7 @@ func (r *RFIDReader) Initialize(serialPort string, baudRate int) error {
 	}
 
 	// Set a small read timeout so GetCard can return quickly if no data.
-	if err := p.SetReadTimeout(50 * time.Millisecond); err != nil {
+	if err := p.SetReadTimeout(serial.NoTimeout); err != nil {
 		// Not all drivers support this; it's okay to continue if it fails.
 		// We'll still try to operate.
 	}
@@ -73,6 +73,7 @@ func (r *RFIDReader) GetCard() (uint64, error) {
 		return 0, fmt.Errorf("read STX: %w", err)
 	}
 	if n == 0 {
+    time.Sleep(time.Second)
 		// No data available (timeout); mirror Python's None -> empty string here.
 		return 0, nil
 	}
