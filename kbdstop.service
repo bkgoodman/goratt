@@ -1,0 +1,12 @@
+[Unit]
+Description=Stop Getty on USB Kbd
+After=getty@tty1.service
+
+[Service]
+WorkingDirectory=/home/bkg
+Type=oneshot
+User=root
+ExecStart=/home/bkg/kbdstop.sh
+
+[Install]
+WantedBy=multi-user.target
