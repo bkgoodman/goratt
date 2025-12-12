@@ -48,6 +48,8 @@ All fields are manditory
 | YellowLED |  "Servo Opening" LED pin. (Usually 25 - No LED if Unset) |
 | GreenLED |  "Access Granted" LED pin. (Usually 24 - No LED if Unset) |
 | LEDpipe | Filename for named pipe for LED commands |
+| OpenSecret | Base64 encoded SHA256 shared secret for open request signature. If none, remote open disabled |
+| OpenToolName | Tool name for Remote Open. If none, remote open disabled |
 
 
 # Neopixel Support

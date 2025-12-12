@@ -26,11 +26,17 @@ import (
 
 	//"github.com/tarm/serial"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/binary"
+	"encoding/hex"
 	"github.com/kenshaw/evdev"
 	"goratt/wiegland"
 )
 
 var client mqtt.Client
+var myOpenTopic string
 
 type RattConfig struct {
 	CACert      string `yaml:"CACert"`
@@ -45,6 +51,8 @@ type RattConfig struct {
 	ApiPassword string `yaml:"ApiPassword"`
 	Resource    string `yaml:"Resource"`
 	Mode        string `yaml:"Mode"`
+	OpenSecret  string `yaml:"OpenSecret"`
+	OpenToolName  string `yaml:"OpenToolName"`
 
 	TagFile    string `yaml:"TagFile"`
 	ServoClose int    `yaml:"ServoClose"`
@@ -57,9 +65,9 @@ type RattConfig struct {
 	DoorPin *int   `yaml:"DoorPin"`
 	LEDpipe string `yaml:"LEDpipe"`
 
-	GreenLED    *uint8    `yaml:"GreenLED"`
-	YellowLED   *uint8    `yaml:"YellowLED"`
-	RedLED    *uint8    `yaml:"RedLED"`
+	GreenLED  *uint8 `yaml:"GreenLED"`
+	YellowLED *uint8 `yaml:"YellowLED"`
+	RedLED    *uint8 `yaml:"RedLED"`
 }
 
 // In-memory ACL list
@@ -96,6 +104,13 @@ type ACLentry struct {
 	Last_accessed string `json:"last_accessed"`
 	Level         int    `json:"level"`
 	Raw_tag_id    string `json:"raw_tag_id"`
+}
+
+type OpenRequest struct {
+	Member    string `json:"member"`
+	ToolName  string `json:"tool"`
+	Timestamp uint64 `json:"timestamp"`
+	Signature string `json:"signature"`
 }
 
 var aclfileMutex sync.Mutex
@@ -263,6 +278,9 @@ func onConnectHandler(client mqtt.Client) {
 		log.Fatal("MQTT Subscribe error: ", token.Error())
 	}
 
+	if token := client.Subscribe(myOpenTopic, 0, nil); token.Wait() && token.Error() != nil {
+		log.Fatal("MQTT Subscribe error: ", token.Error())
+	}
 	// Slow Blue Pulse
 	LEDupdateIdleString(LEDnormalIdle)
 	LEDwriteString(LEDnormalIdle)
@@ -277,14 +295,113 @@ func onConnectionLost(client mqtt.Client, err error) {
 	LEDupdateIdleString(LEDconnectionLost)
 	LEDwriteString(LEDconnectionLost)
 }
+
+// SignRequest computes an HMAC-SHA256 over (member || timestampBE)
+// using a base64-encoded shared secret.
+func SignOpenRequest(base64Secret string, member string, tool string, ts uint64) (sigHex string, sigBase64 string, err error) {
+	// 1) Decode base64 secret
+	secret, err := base64.StdEncoding.DecodeString(base64Secret)
+	if err != nil {
+		return "", "", fmt.Errorf("invalid base64 secret: %w", err)
+	}
+	if len(secret) == 0 {
+		return "", "", fmt.Errorf("secret cannot be empty")
+	}
+
+	// 2) Prepare message: member (bytes) + timestamp (uint64 big-endian)
+	msg := make([]byte, 0, len(member)+len(tool)+8)
+	msg = append(msg, []byte(member)...) // UTF-8 bytes of member
+	msg = append(msg, []byte(tool)...) // UTF-8 bytes of member
+
+	var tsBuf [8]byte
+	binary.BigEndian.PutUint64(tsBuf[:], ts)
+	msg = append(msg, tsBuf[:]...) // Append timestamp
+
+	// 3) Compute HMAC-SHA256
+	mac := hmac.New(sha256.New, secret)
+	mac.Write(msg)
+	sum := mac.Sum(nil)
+
+	// 4) Return both hex and base64 encodings (choose whichever you prefer)
+	return hex.EncodeToString(sum), base64.StdEncoding.EncodeToString(sum), nil
+}
+
+func VerifyOpenRequestSignature(base64Secret string, member string, tool string, ts uint64, providedSig string) error {
+	sigHex, sigBase64, err := SignOpenRequest(base64Secret, member, tool, ts)
+	if err != nil {
+		return err
+	}
+
+	// Try hex first
+	if decodedHex, errHex := hex.DecodeString(providedSig); errHex == nil {
+		expectedHex, _ := hex.DecodeString(sigHex) // should not fail
+		if subtle.ConstantTimeCompare(decodedHex, expectedHex) == 1 {
+			return nil
+		}
+	}
+
+	// Try base64 next
+	if decodedB64, errB64 := base64.StdEncoding.DecodeString(providedSig); errB64 == nil {
+		expectedB64, _ := base64.StdEncoding.DecodeString(sigBase64)
+		if subtle.ConstantTimeCompare(decodedB64, expectedB64) == 1 {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("Signature verification failed")
+}
+
 func onMessageReceived(client mqtt.Client, message mqtt.Message) {
 	//fmt.Printf("Received message on topic: %s\n", message.Topic())
 	//fmt.Printf("Message: %s\n", message.Payload())
+	var topic = fmt.Sprintf("ratt/control/node/%s/open", cfg.ClientID)
 
 	// Is this aun update ACL message? If so - Update
 	if message.Topic() == "ratt/control/broadcast/acl/update" {
 		fmt.Println("Got ACL Update message")
 		GetACLList()
+	} else if message.Topic() == topic {
+		fmt.Println("Got OPEN request")
+		if cfg.OpenSecret == "" {
+			fmt.Printf("No OpenSecret configured - remote open disabled")
+			return
+		}
+		if cfg.OpenToolName == "" {
+			fmt.Printf("No OpenToolName configured - remote open disabled")
+			return
+        }
+		var request OpenRequest
+		err := json.Unmarshal(message.Payload(), request)
+		if err != nil {
+			fmt.Println("Error decoding JSON:", err)
+			return
+		}
+        if (cfg.OpenToolName != request.ToolName) {
+			fmt.Printf("Wrong toolname \"%s\" - expected \"%s\"\n",request.ToolName,cfg.OpenToolName)
+			return
+        }
+		fmt.Printf("Open request member \"%s\" door \"%s\" Timestamp \"%d\" Signature \"%s\"\n", request.Member, request.ToolName, request.Timestamp, request.Signature)
+
+		timestamp := time.Unix(int64(request.Timestamp), 0) // seconds + 0 nanos
+		windowStart := timestamp.Add(-5 * time.Minute)
+		windowEnd := timestamp.Add(5 * time.Minute)
+		now := time.Now()
+
+		if now.Before(windowStart) || now.After(windowEnd) {
+			fmt.Println("Open request timeout")
+			return
+		}
+
+		err = VerifyOpenRequestSignature(cfg.OpenSecret, request.Member, request.ToolName, request.Timestamp, request.Signature)
+		if err != nil {
+			fmt.Printf("Open request verification failed: %s\n", err)
+			return
+		}
+
+		var topic string = fmt.Sprintf("ratt/status/node/%s/personality/access", cfg.ClientID)
+		var message string = fmt.Sprintf("{\"allowed\":1,\"member\":\"%s\"}", request.Member)
+		client.Publish(topic, 0, false, message)
+		open_servo(cfg.ServoOpen, cfg.ServoClose, cfg.WaitSecs, cfg.Mode)
 	}
 }
 
@@ -353,11 +470,11 @@ loop:
 
 func NFClistener() {
 	if cfg.NFCmode == "wiegland" {
-    reader := &wiegland.RFIDReader{}
-    if err := reader.Initialize(cfg.NFCdevice, 9600); err != nil {
-        log.Fatalf("Wiegland init failed: %v", err)
-    }
-    defer reader.Close()
+		reader := &wiegland.RFIDReader{}
+		if err := reader.Initialize(cfg.NFCdevice, 9600); err != nil {
+			log.Fatalf("Wiegland init failed: %v", err)
+		}
+		defer reader.Close()
 
 		for {
 			tag, err := reader.GetCard()
@@ -443,7 +560,11 @@ func main() {
 		log.Fatal("Config Decode error: ", err)
 	}
 
+	if cfg.ClientID == "" {
+		panic("ClientID missing in Config file")
+	}
 
+	myOpenTopic = fmt.Sprintf("ratt/control/node/%s/open", cfg.ClientID)
 	if cfg.LEDpipe != "" {
 		LEDfile, err = os.OpenFile(cfg.LEDpipe, os.O_RDWR, 0644)
 		if LEDfile == nil {
@@ -455,18 +576,18 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-    if (cfg.RedLED != nil) {
-            hw.PinMode(*cfg.RedLED, govattu.ALToutput)
-            hw.PinSet(*cfg.RedLED)
-    }
-    if (cfg.GreenLED != nil) {
-            hw.PinMode(*cfg.GreenLED, govattu.ALToutput)
-            hw.PinSet(*cfg.GreenLED)
-    }
-    if (cfg.YellowLED != nil) {
-            hw.PinMode(*cfg.YellowLED, govattu.ALToutput)
-            hw.PinSet(*cfg.YellowLED)
-    }
+	if cfg.RedLED != nil {
+		hw.PinMode(*cfg.RedLED, govattu.ALToutput)
+		hw.PinSet(*cfg.RedLED)
+	}
+	if cfg.GreenLED != nil {
+		hw.PinMode(*cfg.GreenLED, govattu.ALToutput)
+		hw.PinSet(*cfg.GreenLED)
+	}
+	if cfg.YellowLED != nil {
+		hw.PinMode(*cfg.YellowLED, govattu.ALToutput)
+		hw.PinSet(*cfg.YellowLED)
+	}
 	hw.ZeroPinEventDetectMask()
 
 	if *openflag {
@@ -524,9 +645,15 @@ func main() {
 	ReadTagFile()
 	GetACLList()
 
-    if (cfg.RedLED != nil) { hw.PinClear(*cfg.RedLED) }
-    if (cfg.GreenLED != nil) { hw.PinClear(*cfg.GreenLED) }
-    if (cfg.YellowLED != nil) { hw.PinClear(*cfg.YellowLED) }
+	if cfg.RedLED != nil {
+		hw.PinClear(*cfg.RedLED)
+	}
+	if cfg.GreenLED != nil {
+		hw.PinClear(*cfg.GreenLED)
+	}
+	if cfg.YellowLED != nil {
+		hw.PinClear(*cfg.YellowLED)
+	}
 	hw.Close()
 
 	LEDupdateIdleString(LEDconnectionLost)
@@ -536,7 +663,7 @@ func main() {
 	go NFClistener()
 	go PingSender()
 
-  //dymo_label("- Ready -")
+	//dymo_label("- Ready -")
 	// Wait for a signal to exit
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
