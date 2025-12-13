@@ -16,15 +16,19 @@ import (
 // This tag number tried to badge in
 func BadgeTag(id uint64) {
 	var found bool = false
+  var allowed=0
 	for _,tag := range validTags {
 		if id == tag.Tag {
 			found = true
 			access := "Denied"
-			if (tag.Allowed) { access = "Allowed" }
+			if (tag.Allowed) { 
+        access = "Allowed" 
+        allowed = 1
+      }
 			fmt.Printf("Tag %d Member %s Access %s",id,tag.Member,access)
 
 			var topic string = fmt.Sprintf("ratt/status/node/%s/personality/access",cfg.ClientID)
-			var message string = fmt.Sprintf("{\"allowed\":%d,\"member\":\"%s\"}",tag.Allowed,tag.Member)
+			var message string = fmt.Sprintf("{\"allowed\":%d,\"member\":\"%s\"}",allowed,tag.Member)
 			client.Publish(topic,0,false,message)
 
 			if (tag.Allowed) {

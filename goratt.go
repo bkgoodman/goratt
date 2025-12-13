@@ -371,7 +371,7 @@ func onMessageReceived(client mqtt.Client, message mqtt.Message) {
 			return
         }
 		var request OpenRequest
-		err := json.Unmarshal(message.Payload(), request)
+		err := json.Unmarshal(message.Payload(), &request)
 		if err != nil {
 			fmt.Println("Error decoding JSON:", err)
 			return
@@ -481,10 +481,11 @@ func NFClistener() {
 			if err != nil {
 				fmt.Println("Weigland error", err)
 			} else {
-				fmt.Println("Got RFID", tag)
 				if tag != 0 {
+					fmt.Println("Got Wiegland tag", tag)
 					BadgeTag(tag)
 				}
+				time.Sleep(time.Second)
 			}
 
 		}
