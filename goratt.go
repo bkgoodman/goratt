@@ -37,22 +37,23 @@ import (
 
 var client mqtt.Client
 var myOpenTopic string
+var myBuild string
 
 type RattConfig struct {
-	CACert      string `yaml:"CACert"`
-	ClientCert  string `yaml:"ClientCert"`
-	ClientKey   string `yaml:"ClientKey"`
-	ClientID    string `yaml:"ClientID"`
-	MqttHost    string `yaml:"MqttHost"`
-	MqttPort    int    `yaml:"MqttPort"`
-	ApiURL      string `yaml:"ApiURL"`
-	ApiCAFile   string `yaml:"ApiCAFile"`
-	ApiUsername string `yaml:"ApiUsername"`
-	ApiPassword string `yaml:"ApiPassword"`
-	Resource    string `yaml:"Resource"`
-	Mode        string `yaml:"Mode"`
-	OpenSecret  string `yaml:"OpenSecret"`
-	OpenToolName  string `yaml:"OpenToolName"`
+	CACert       string `yaml:"CACert"`
+	ClientCert   string `yaml:"ClientCert"`
+	ClientKey    string `yaml:"ClientKey"`
+	ClientID     string `yaml:"ClientID"`
+	MqttHost     string `yaml:"MqttHost"`
+	MqttPort     int    `yaml:"MqttPort"`
+	ApiURL       string `yaml:"ApiURL"`
+	ApiCAFile    string `yaml:"ApiCAFile"`
+	ApiUsername  string `yaml:"ApiUsername"`
+	ApiPassword  string `yaml:"ApiPassword"`
+	Resource     string `yaml:"Resource"`
+	Mode         string `yaml:"Mode"`
+	OpenSecret   string `yaml:"OpenSecret"`
+	OpenToolName string `yaml:"OpenToolName"`
 
 	TagFile    string `yaml:"TagFile"`
 	ServoClose int    `yaml:"ServoClose"`
@@ -311,7 +312,7 @@ func SignOpenRequest(base64Secret string, member string, tool string, ts uint64)
 	// 2) Prepare message: member (bytes) + timestamp (uint64 big-endian)
 	msg := make([]byte, 0, len(member)+len(tool)+8)
 	msg = append(msg, []byte(member)...) // UTF-8 bytes of member
-	msg = append(msg, []byte(tool)...) // UTF-8 bytes of member
+	msg = append(msg, []byte(tool)...)   // UTF-8 bytes of member
 
 	var tsBuf [8]byte
 	binary.BigEndian.PutUint64(tsBuf[:], ts)
@@ -369,17 +370,24 @@ func onMessageReceived(client mqtt.Client, message mqtt.Message) {
 		if cfg.OpenToolName == "" {
 			fmt.Printf("No OpenToolName configured - remote open disabled")
 			return
-        }
+		}
 		var request OpenRequest
 		err := json.Unmarshal(message.Payload(), &request)
 		if err != nil {
 			fmt.Println("Error decoding JSON:", err)
 			return
 		}
-        if (cfg.OpenToolName != request.ToolName) {
-			fmt.Printf("Wrong toolname \"%s\" - expected \"%s\"\n",request.ToolName,cfg.OpenToolName)
+
+		err = VerifyOpenRequestSignature(cfg.OpenSecret, request.Member, request.ToolName, request.Timestamp, request.Signature)
+		if err != nil {
+			fmt.Printf("Open request verification failed: %s\n", err)
 			return
-        }
+		}
+
+		if cfg.OpenToolName != request.ToolName {
+			fmt.Printf("Wrong toolname \"%s\" - expected \"%s\"\n", request.ToolName, cfg.OpenToolName)
+			return
+		}
 		fmt.Printf("Open request member \"%s\" door \"%s\" Timestamp \"%d\" Signature \"%s\"\n", request.Member, request.ToolName, request.Timestamp, request.Signature)
 
 		timestamp := time.Unix(int64(request.Timestamp), 0) // seconds + 0 nanos
@@ -389,12 +397,6 @@ func onMessageReceived(client mqtt.Client, message mqtt.Message) {
 
 		if now.Before(windowStart) || now.After(windowEnd) {
 			fmt.Println("Open request timeout")
-			return
-		}
-
-		err = VerifyOpenRequestSignature(cfg.OpenSecret, request.Member, request.ToolName, request.Timestamp, request.Signature)
-		if err != nil {
-			fmt.Printf("Open request verification failed: %s\n", err)
 			return
 		}
 
@@ -550,6 +552,7 @@ func mqttconnect() {
 }
 
 func main() {
+	fmt.Printf("goratt build %s\n", myBuild) // Must build via makefile for this to work
 	openflag := flag.Bool("holdopen", false, "Hold door open indefinitley")
 	cfgfile := flag.String("cfg", "goratt.cfg", "Config file")
 	flag.Parse()
