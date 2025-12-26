@@ -7,61 +7,109 @@ Go-based RATT client
 1. Clone repo
 2. `go build`
 
-For ARM (Raspberry Pi) builds are: `GOARCH=arm go build`
-(I think this does 32 bit. `arm64` for 64 bit builds)
+For ARM (Raspberry Pi) builds:
+- 32-bit: `GOARCH=arm go build`
+- 64-bit: `GOARCH=arm64 go build`
 
 # Configure
 
 1. Copy `example.cfg` to `goratt.cfg`
 2. Edit as needed in your environment
 
-See section below for parameters
+See configuration section below for details.
 
 # Run
 
 `./goratt`
 
+Options:
+- `-cfg <file>` - Specify config file (default: `goratt.cfg`)
+- `-holdopen` - Hold door open indefinitely (for testing)
 
-# Configuration 
+# Configuration
 
-All fields are manditory
+The configuration file uses YAML format with nested sections.
+
+## General Settings
 
 | Parameter | Description |
-| ---------- | ------------- |
-| CACert | Path of file for the Root CA of your MQTT server |
-| ClientCert  | Path of file for your GoRATT's TLS client cert |
-| ClientKey | Path for TLS client key |
-| ClientID | *Unique* Client ID for Auth backend. MAC address of machine, no seperators |
-| MqttHost | Hostname of MQTT server |
-| MqttPort | Port number of MQTT server |
-| ApiCAFile | CA for Auth backend (Web site) |
-| ApiURL | Base URL for Auth backend |
-| ApiUsername | Username for Auth backend API access |
-| ApiPassword | Password for Auth backend API access |
-| Resource | Resource name - which resource users are granted permissions for |
-| Mode  | "Servo", "openhigh" or "openlow"  - No door open if unset. Must set `DoorPin`|
-| TagFile | Path to file to store allowed tags on local system |
-| NFCdevice |  Device file of NFC reader for tags swiped in. /dev/tty for local keyboard, or /dev/ttyUSB0, etc |
-| NFCmode |  Type of NFC device - see NFCmode table below |
-| DoorPin |  Pin Number for Door open or servo (Usually 18). No door open if unset |
-| RedLED |  "Access Deined" LED pin. (Usually 23 - No LED if Unset) |
-| YellowLED |  "Servo Opening" LED pin. (Usually 25 - No LED if Unset) |
-| GreenLED |  "Access Granted" LED pin. (Usually 24 - No LED if Unset) |
-| LEDpipe | Filename for named pipe for LED commands |
-| OpenSecret | Base64 encoded SHA256 shared secret for open request signature. If none, remote open disabled |
-| OpenToolName | Tool name for Remote Open. If none, remote open disabled |
+| --------- | ----------- |
+| `client_id` | *Unique* Client ID for Auth backend. MAC address of machine, no separators |
+| `resource` | Resource name - which resource users are granted permissions for |
+| `tag_file` | Path to file to store allowed tags on local system |
+| `wait_secs` | How long to keep door open after access granted |
+| `open_secret` | Base64 encoded SHA256 shared secret for remote open. Leave empty to disable |
+| `open_tool_name` | Tool name for remote open. Leave empty to disable |
 
+## MQTT Settings (`mqtt:`)
+
+| Parameter | Description |
+| --------- | ----------- |
+| `host` | Hostname of MQTT server |
+| `port` | Port number of MQTT server |
+| `ca_cert` | Path to Root CA certificate for MQTT server |
+| `client_cert` | Path to client TLS certificate |
+| `client_key` | Path to client TLS key |
+
+## API Settings (`api:`)
+
+| Parameter | Description |
+| --------- | ----------- |
+| `url` | Base URL for Auth backend |
+| `ca_file` | CA certificate for Auth backend |
+| `username` | Username for Auth backend API access |
+| `password` | Password for Auth backend API access |
+
+## Reader Settings (`reader:`)
+
+| Parameter | Description |
+| --------- | ----------- |
+| `type` | Reader type: `wiegand`, `keyboard`, or `serial` |
+| `device` | Device path (e.g., `/dev/serial0`, `/dev/input/event0`) |
+| `baud` | Baud rate for serial devices (default: 9600 for wiegand, 115200 for serial) |
+
+### Reader Types
+
+| Type | Description |
+| ---- | ----------- |
+| `wiegand` | Serial Wiegand protocol readers. Device usually `/dev/serial0` |
+| `keyboard` | USB keyboard-style readers outputting hex digits. Device is `/dev/input/eventX` |
+| `serial` | Custom serial protocol readers at 115200 baud |
+
+## Door Settings (`door:`)
+
+| Parameter | Description |
+| --------- | ----------- |
+| `type` | Door type: `servo`, `gpio_high`, `gpio_low`, or `none` |
+| `pin` | GPIO pin number (usually 18) |
+| `servo_open` | PWM value for open position (servo mode only) |
+| `servo_close` | PWM value for closed position (servo mode only) |
+
+### Door Types
+
+| Type | Description |
+| ---- | ----------- |
+| `servo` | PWM servo control on specified pin |
+| `gpio_high` | Set pin HIGH to open, LOW to close |
+| `gpio_low` | Set pin LOW to open, HIGH to close |
+| `none` | No door control |
+
+## Indicator Settings (`indicator:`)
+
+| Parameter | Description |
+| --------- | ----------- |
+| `green_pin` | GPIO pin for "Access Granted" LED (usually 24) |
+| `yellow_pin` | GPIO pin for "Opening" LED (usually 25) |
+| `red_pin` | GPIO pin for "Access Denied" LED (usually 23) |
+| `neopixel_pipe` | Path to named pipe for neopixel commands |
+
+All indicator settings are optional. Omit or set to null to disable.
 
 # Neopixel Support
 
-Neopixels are supported only through an external program to drive them. See [RPi Neopixel Tool](http://github.com/bkgoodman/rpi-neopixel-tool.git)
+Neopixels are supported through an external program. See [RPi Neopixel Tool](http://github.com/bkgoodman/rpi-neopixel-tool.git)
 
-Coordination is necessary when starting neopixel and doorlock services, for example in systemd files, notice that one is dependent on the other:
-
-# NFCmode
-Different modes for different devices
-| `10h-kbd` | for 10h (hex) keyboard device. `NFCdevce` must be a `/dev/input/event0" device for this |
-| `wiegland` | External RFIDs like for doorbot. Serial Wegland protocol. Device usually `/dev/serial0` |
+When using both neopixels and the doorlock service, ensure proper startup ordering in systemd:
 
 ## Doorlock
 ```
