@@ -1,112 +1,48 @@
 package main
 
 import (
-	"bufio"
-	"crypto/tls"
-	"crypto/x509"
-	"encoding/json"
-	"flag"
-	"fmt"
-	"github.com/hjkoskel/govattu"
-	"gopkg.in/yaml.v2"
-	"io/ioutil"
-	"log"
-	"os"
-	"os/signal"
-	"strconv"
-	"sync"
-	"syscall"
-	"time"
-	// "strings"
-
-	"github.com/eclipse/paho.mqtt.golang"
-
-	"encoding/base64"
-	"net/http"
-
-	//"github.com/tarm/serial"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
-	"github.com/kenshaw/evdev"
-	"goratt/wiegland"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"io/ioutil"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"gopkg.in/yaml.v2"
+
+	"goratt/door"
+	"goratt/indicator"
+	"goratt/reader"
 )
 
-var client mqtt.Client
-var myOpenTopic string
 var myBuild string
 
-type RattConfig struct {
-	CACert       string `yaml:"CACert"`
-	ClientCert   string `yaml:"ClientCert"`
-	ClientKey    string `yaml:"ClientKey"`
-	ClientID     string `yaml:"ClientID"`
-	MqttHost     string `yaml:"MqttHost"`
-	MqttPort     int    `yaml:"MqttPort"`
-	ApiURL       string `yaml:"ApiURL"`
-	ApiCAFile    string `yaml:"ApiCAFile"`
-	ApiUsername  string `yaml:"ApiUsername"`
-	ApiPassword  string `yaml:"ApiPassword"`
-	Resource     string `yaml:"Resource"`
-	Mode         string `yaml:"Mode"`
-	OpenSecret   string `yaml:"OpenSecret"`
-	OpenToolName string `yaml:"OpenToolName"`
-
-	TagFile    string `yaml:"TagFile"`
-	ServoClose int    `yaml:"ServoClose"`
-	ServoOpen  int    `yaml:"ServoOpen"`
-	WaitSecs   int    `yaml:"WaitSecs"`
-
-	NFCdevice string `yaml:"NFCdevice"`
-	NFCmode   string `yaml:"NFCmode"`
-
-	DoorPin *int   `yaml:"DoorPin"`
-	LEDpipe string `yaml:"LEDpipe"`
-
-	GreenLED  *uint8 `yaml:"GreenLED"`
-	YellowLED *uint8 `yaml:"YellowLED"`
-	RedLED    *uint8 `yaml:"RedLED"`
+// App holds the application state and dependencies.
+type App struct {
+	cfg       *Config
+	client    mqtt.Client
+	reader    reader.TagReader
+	door      door.DoorOpener
+	indicator indicator.Indicator
+	acl       *ACLManager
+	ctx       context.Context
+	cancel    context.CancelFunc
 }
 
-// In-memory ACL list
-type ACLlist struct {
-	Tag     uint64
-	Level   int
-	Member  string
-	Allowed bool
-}
-
-var validTags []ACLlist
-
-var LEDfile *os.File
-var LEDidleString string
-var cfg RattConfig
-
-const (
-	LEDconnectionLost = "@2 !150000 001010"
-	LEDnormalIdle     = "@3 !150000 400000"
-	LEDaccessGranted  = "@1 !50000 8000"
-	LEDaccessDenied   = "@2 !10000 ff"
-	LEDterminated     = "@0 010101"
-)
-
-// From API - off the wire
-type ACLentry struct {
-	Tagid         string `json:"tagid"`
-	Tag_ident     string `json:"tag_ident"`
-	Allowed       string `json:"allowed"`
-	Warning       string `json:"warning"`
-	Member        string `json:"member"`
-	Nickname      string `json:"nickname"`
-	Plan          string `json:"plan"`
-	Last_accessed string `json:"last_accessed"`
-	Level         int    `json:"level"`
-	Raw_tag_id    string `json:"raw_tag_id"`
-}
-
+// OpenRequest represents a remote open request.
 type OpenRequest struct {
 	Member    string `json:"member"`
 	ToolName  string `json:"tool"`
@@ -114,193 +50,320 @@ type OpenRequest struct {
 	Signature string `json:"signature"`
 }
 
-var aclfileMutex sync.Mutex
+func main() {
+	fmt.Printf("goratt build %s\n", myBuild)
 
-func LEDupdateIdleString(str string) {
-	LEDidleString = str
+	openflag := flag.Bool("holdopen", false, "Hold door open indefinitely")
+	cfgfile := flag.String("cfg", "goratt.cfg", "Config file")
+	flag.Parse()
+
+	// Load configuration
+	f, err := os.Open(*cfgfile)
+	if err != nil {
+		log.Fatalf("Open config: %v", err)
+	}
+	defer f.Close()
+
+	var cfg Config
+	if err := yaml.NewDecoder(f).Decode(&cfg); err != nil {
+		log.Fatalf("Decode config: %v", err)
+	}
+
+	if cfg.ClientID == "" {
+		log.Fatal("client_id missing in config file")
+	}
+
+	// Create application context
+	ctx, cancel := context.WithCancel(context.Background())
+
+	app := &App{
+		cfg:    &cfg,
+		ctx:    ctx,
+		cancel: cancel,
+	}
+
+	// Initialize indicator
+	app.indicator, err = indicator.New(cfg.Indicator)
+	if err != nil {
+		log.Fatalf("Init indicator: %v", err)
+	}
+	app.indicator.ConnectionLost() // Start with connection lost state
+
+	// Initialize door opener
+	app.door, err = door.New(cfg.Door)
+	if err != nil {
+		log.Fatalf("Init door: %v", err)
+	}
+
+	// Initialize tag reader
+	app.reader, err = reader.New(cfg.Reader)
+	if err != nil {
+		log.Fatalf("Init reader: %v", err)
+	}
+
+	// Initialize ACL manager
+	app.acl = NewACLManager(&cfg)
+	app.acl.SetUpdateCallback(func() {
+		topic := fmt.Sprintf("ratt/status/node/%s/acl/update", cfg.ClientID)
+		app.client.Publish(topic, 0, false, `{"status":"downloaded"}`)
+	})
+
+	// Load existing ACL from file, then fetch from API
+	if err := app.acl.LoadFromFile(); err != nil {
+		log.Printf("Warning: could not load tag file: %v", err)
+	}
+	if err := app.acl.FetchFromAPI(); err != nil {
+		log.Printf("Warning: could not fetch ACL from API: %v", err)
+	}
+
+	// Handle holdopen flag
+	if *openflag {
+		app.openDoor("holdopen")
+		select {} // Block forever
+	}
+
+	// Initialize MQTT
+	app.initMQTT()
+
+	// Start background goroutines
+	go app.mqttConnect()
+	go app.tagListener()
+	go app.pingSender()
+
+	// Wait for shutdown signal
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	<-sigCh
+
+	fmt.Println("Shutting down...")
+	cancel()
+
+	// Cleanup
+	app.client.Disconnect(250)
+	app.reader.Close()
+	app.door.Release()
+	app.indicator.Shutdown()
+	app.indicator.Release()
+
+	fmt.Println("Shutdown complete")
 }
 
-func LEDwriteString(str string) {
-	if LEDfile != nil {
-		LEDfile.Write([]byte(str))
+func (app *App) initMQTT() {
+	broker := fmt.Sprintf("ssl://%s:%d", app.cfg.MQTT.Host, app.cfg.MQTT.Port)
+
+	cert, err := tls.LoadX509KeyPair(app.cfg.MQTT.ClientCert, app.cfg.MQTT.ClientKey)
+	if err != nil {
+		log.Fatalf("Load X509 keypair: %v", err)
 	}
+
+	caCert, err := ioutil.ReadFile(app.cfg.MQTT.CACert)
+	if err != nil {
+		log.Fatalf("Read CA cert: %v", err)
+	}
+
+	caPool := x509.NewCertPool()
+	caPool.AppendCertsFromPEM(caCert)
+
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		RootCAs:      caPool,
+	}
+
+	opts := mqtt.NewClientOptions().
+		AddBroker(broker).
+		SetClientID(app.cfg.ClientID).
+		SetAutoReconnect(true).
+		SetConnectRetry(true).
+		SetKeepAlive(60 * time.Second).
+		SetTLSConfig(tlsConfig).
+		SetConnectionLostHandler(app.onConnectionLost).
+		SetOnConnectHandler(app.onConnect).
+		SetDefaultPublishHandler(app.onMessage)
+
+	app.client = mqtt.NewClient(opts)
+
+	mqtt.ERROR = log.New(os.Stdout, "[ERROR] ", 0)
+	mqtt.CRITICAL = log.New(os.Stdout, "[CRIT] ", 0)
+	mqtt.WARN = log.New(os.Stdout, "[WARN]  ", 0)
 }
 
-func GetACLList() {
-	// Lock the mutex before entering the critical section
-	aclfileMutex.Lock()
-	defer aclfileMutex.Unlock()
-
-	// Create a custom transport with your CA certificate
-	caCert, err := ioutil.ReadFile(cfg.ApiCAFile)
-	if err != nil {
-		fmt.Println("Error reading CA certificate: ", err)
-		return
+func (app *App) mqttConnect() {
+	if token := app.client.Connect(); token.Wait() && token.Error() != nil {
+		log.Fatalf("MQTT connect: %v", token.Error())
 	}
-
-	caCertPool := x509.NewCertPool()
-	caCertPool.AppendCertsFromPEM(caCert)
-
-	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			RootCAs: caCertPool,
-		},
-	}
-
-	// Create an HTTP client with the custom transport
-	httpClient := &http.Client{Transport: transport}
-
-	// Specify the URL you want to make a request to
-	url := fmt.Sprintf("%s/api/v1/resources/%s/acl", cfg.ApiURL, cfg.Resource)
-
-	// Create a new GET request
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		fmt.Println("Error creating request: ", err)
-		return
-	}
-
-	// Add custom credentials to the request header
-	auth := base64.StdEncoding.EncodeToString([]byte(cfg.ApiUsername + ":" + cfg.ApiPassword))
-	req.Header.Add("Authorization", "Basic "+auth)
-
-	// Make the request
-	response, err := httpClient.Do(req)
-	if err != nil {
-		fmt.Println("Error making request: ", err)
-		return
-	}
-	defer response.Body.Close()
-
-	// Process the response
-	body, err := ioutil.ReadAll(response.Body)
-	if err != nil {
-		fmt.Println("Error reading response body: ", err)
-		return
-	}
-
-	//fmt.Printf("Response:\n%s\n", body)
-	// Unmarshal JSON array into a slice of structs
-	var items []ACLentry
-	err = json.Unmarshal([]byte(body), &items)
-	if err != nil {
-		fmt.Println("Error decoding JSON:", err)
-		return
-	}
-
-	// Open temporary version of tagfile to write
-	file, err := os.Create(cfg.TagFile + ".tmp")
-
-	validTags = validTags[:0]
-	// Print the desired field (e.g., "name") from each dictionary
-	for index, item := range items {
-		_ = index
-		//fmt.Println("ID:", index,item.Tagid,item.Raw_tag_id)
-
-		number, err := strconv.ParseUint(item.Raw_tag_id, 10, 64)
-		if err == nil {
-			validTags = append(validTags, ACLlist{
-				Tag:     number,
-				Level:   item.Level,
-				Member:  item.Member,
-				Allowed: (item.Allowed == "allowed"),
-			})
-		}
-		access := "denied"
-		if item.Allowed == "allowed" {
-			access = "allowed"
-		}
-		_, err = file.WriteString(fmt.Sprintf("%d %s %d %s\n", number, access, item.Level, item.Member))
-		if err != nil {
-			fmt.Println("Error writing to tag file: ", err)
-			file.Close()
-			return
-		}
-	}
-
-	file.Close()
-
-	// Rename or move the file
-	err = os.Rename(cfg.TagFile+".tmp", cfg.TagFile)
-	if err != nil {
-		fmt.Println("Error moving tag file :", err)
-		return
-	}
-
-	// Signal we were updated
-
-	var topic string = fmt.Sprintf("ratt/status/node/%s/acl/update", cfg.ClientID)
-	var message string = "{\"status\":\"downloaded\"}"
-	client.Publish(topic, 0, false, message)
-
+	fmt.Println("MQTT connected")
 }
 
-func ReadTagFile() {
-	aclfileMutex.Lock()
-	defer aclfileMutex.Unlock()
+func (app *App) onConnect(client mqtt.Client) {
+	fmt.Println("MQTT connection established")
 
-	file, err := os.Open(cfg.TagFile)
-	if err != nil {
-		log.Fatal("Error Reading Tag File: ", err)
-		return
-	}
-	defer file.Close()
-
-	// Create a bufio.Scanner to read lines from the file
-	scanner := bufio.NewScanner(file)
-
-	// Loop through each line
-	var tag uint64
-	var level int
-	var member string
-	var access string
-
-	validTags = validTags[:0]
-	for scanner.Scan() {
-		line := scanner.Text()
-		_, err := fmt.Sscanf(line, "%d %s %d %s", &tag, &access, &level, &member)
-		if err == nil {
-			validTags = append(validTags, ACLlist{
-				Tag:     tag,
-				Level:   level,
-				Member:  member,
-				Allowed: (access == "allowed"),
-			})
-		}
-	}
-
-}
-
-func onConnectHandler(client mqtt.Client) {
-	fmt.Println("MQTT Connection Established")
-	// Subscribe to the topic
-	var topic = "ratt/control/broadcast/acl/update"
+	// Subscribe to broadcast ACL update
+	topic := "ratt/control/broadcast/acl/update"
 	if token := client.Subscribe(topic, 0, nil); token.Wait() && token.Error() != nil {
-		log.Fatal("MQTT Subscribe error: ", token.Error())
+		log.Printf("Subscribe error: %v", token.Error())
 	}
 
-	if token := client.Subscribe(myOpenTopic, 0, nil); token.Wait() && token.Error() != nil {
-		log.Fatal("MQTT Subscribe error: ", token.Error())
+	// Subscribe to node-specific open command
+	openTopic := fmt.Sprintf("ratt/control/node/%s/open", app.cfg.ClientID)
+	if token := client.Subscribe(openTopic, 0, nil); token.Wait() && token.Error() != nil {
+		log.Printf("Subscribe error: %v", token.Error())
 	}
-	// Slow Blue Pulse
-	LEDupdateIdleString(LEDnormalIdle)
-	LEDwriteString(LEDnormalIdle)
 
+	app.indicator.Idle()
 }
 
-func onConnectionLost(client mqtt.Client, err error) {
-	// Panic - because a restart will fix???
-	// panic(fmt.Errorf("MQTT CONNECTION LOST: %s",err))
-	fmt.Printf("MQTT CONNECTION LOST: %s", err)
-	// Slow Yellow Wink
-	LEDupdateIdleString(LEDconnectionLost)
-	LEDwriteString(LEDconnectionLost)
+func (app *App) onConnectionLost(client mqtt.Client, err error) {
+	fmt.Printf("MQTT connection lost: %v\n", err)
+	app.indicator.ConnectionLost()
 }
 
-// SignRequest computes an HMAC-SHA256 over (member || timestampBE)
-// using a base64-encoded shared secret.
-func SignOpenRequest(base64Secret string, member string, tool string, ts uint64) (sigHex string, sigBase64 string, err error) {
-	// 1) Decode base64 secret
+func (app *App) onMessage(client mqtt.Client, msg mqtt.Message) {
+	switch msg.Topic() {
+	case "ratt/control/broadcast/acl/update":
+		fmt.Println("Received ACL update message")
+		if err := app.acl.FetchFromAPI(); err != nil {
+			log.Printf("Fetch ACL: %v", err)
+		}
+
+	default:
+		// Check if it's an open command for this node
+		openTopic := fmt.Sprintf("ratt/control/node/%s/open", app.cfg.ClientID)
+		if msg.Topic() == openTopic {
+			app.handleOpenRequest(msg.Payload())
+		}
+	}
+}
+
+func (app *App) handleOpenRequest(payload []byte) {
+	if app.cfg.OpenSecret == "" || app.cfg.OpenToolName == "" {
+		fmt.Println("Remote open disabled (no secret or tool name configured)")
+		return
+	}
+
+	var req OpenRequest
+	if err := json.Unmarshal(payload, &req); err != nil {
+		log.Printf("Decode open request: %v", err)
+		return
+	}
+
+	if err := verifySignature(app.cfg.OpenSecret, req.Member, req.ToolName, req.Timestamp, req.Signature); err != nil {
+		log.Printf("Signature verification failed: %v", err)
+		return
+	}
+
+	if req.ToolName != app.cfg.OpenToolName {
+		log.Printf("Wrong tool name %q, expected %q", req.ToolName, app.cfg.OpenToolName)
+		return
+	}
+
+	// Check timestamp is within 5 minute window
+	ts := time.Unix(int64(req.Timestamp), 0)
+	now := time.Now()
+	if now.Before(ts.Add(-5*time.Minute)) || now.After(ts.Add(5*time.Minute)) {
+		log.Println("Open request timestamp out of range")
+		return
+	}
+
+	fmt.Printf("Remote open request from %s\n", req.Member)
+	app.publishAccess(req.Member, true)
+	app.openDoor(req.Member)
+}
+
+func (app *App) tagListener() {
+	for {
+		select {
+		case <-app.ctx.Done():
+			return
+		default:
+		}
+
+		tagID, err := app.reader.Read(app.ctx)
+		if err != nil {
+			if err == context.Canceled {
+				return
+			}
+			log.Printf("Read tag: %v", err)
+			time.Sleep(time.Second)
+			continue
+		}
+
+		if tagID == 0 {
+			continue
+		}
+
+		fmt.Printf("Tag read: %d\n", tagID)
+		app.handleTag(tagID)
+	}
+}
+
+func (app *App) handleTag(tagID uint64) {
+	record, found := app.acl.Lookup(tagID)
+
+	if !found {
+		fmt.Printf("Tag %d not found in ACL\n", tagID)
+		app.indicator.Denied()
+		time.Sleep(3 * time.Second)
+		app.indicator.Idle()
+		return
+	}
+
+	fmt.Printf("Tag %d: member=%s allowed=%v\n", tagID, record.Member, record.Allowed)
+	app.publishAccess(record.Member, record.Allowed)
+
+	if record.Allowed {
+		app.openDoor(record.Member)
+	} else {
+		app.indicator.Denied()
+		time.Sleep(3 * time.Second)
+		app.indicator.Idle()
+	}
+}
+
+func (app *App) openDoor(member string) {
+	app.indicator.Opening()
+
+	if err := app.door.Open(); err != nil {
+		log.Printf("Door open: %v", err)
+	}
+
+	app.indicator.Granted()
+	time.Sleep(time.Duration(app.cfg.WaitSecs) * time.Second)
+
+	if err := app.door.Close(); err != nil {
+		log.Printf("Door close: %v", err)
+	}
+
+	app.indicator.Idle()
+}
+
+func (app *App) publishAccess(member string, allowed bool) {
+	allowedInt := 0
+	if allowed {
+		allowedInt = 1
+	}
+	topic := fmt.Sprintf("ratt/status/node/%s/personality/access", app.cfg.ClientID)
+	msg := fmt.Sprintf(`{"allowed":%d,"member":"%s"}`, allowedInt, member)
+	app.client.Publish(topic, 0, false, msg)
+}
+
+func (app *App) pingSender() {
+	ticker := time.NewTicker(120 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-app.ctx.Done():
+			return
+		case <-ticker.C:
+			topic := fmt.Sprintf("ratt/status/node/%s/ping", app.cfg.ClientID)
+			app.client.Publish(topic, 0, false, `{"status":"ok"}`)
+		}
+	}
+}
+
+// Signature verification helpers
+
+func signOpenRequest(base64Secret, member, tool string, ts uint64) (string, string, error) {
 	secret, err := base64.StdEncoding.DecodeString(base64Secret)
 	if err != nil {
 		return "", "", fmt.Errorf("invalid base64 secret: %w", err)
@@ -309,376 +372,42 @@ func SignOpenRequest(base64Secret string, member string, tool string, ts uint64)
 		return "", "", fmt.Errorf("secret cannot be empty")
 	}
 
-	// 2) Prepare message: member (bytes) + timestamp (uint64 big-endian)
 	msg := make([]byte, 0, len(member)+len(tool)+8)
-	msg = append(msg, []byte(member)...) // UTF-8 bytes of member
-	msg = append(msg, []byte(tool)...)   // UTF-8 bytes of member
+	msg = append(msg, []byte(member)...)
+	msg = append(msg, []byte(tool)...)
 
 	var tsBuf [8]byte
 	binary.BigEndian.PutUint64(tsBuf[:], ts)
-	msg = append(msg, tsBuf[:]...) // Append timestamp
+	msg = append(msg, tsBuf[:]...)
 
-	// 3) Compute HMAC-SHA256
 	mac := hmac.New(sha256.New, secret)
 	mac.Write(msg)
 	sum := mac.Sum(nil)
 
-	// 4) Return both hex and base64 encodings (choose whichever you prefer)
 	return hex.EncodeToString(sum), base64.StdEncoding.EncodeToString(sum), nil
 }
 
-func VerifyOpenRequestSignature(base64Secret string, member string, tool string, ts uint64, providedSig string) error {
-	sigHex, sigBase64, err := SignOpenRequest(base64Secret, member, tool, ts)
+func verifySignature(base64Secret, member, tool string, ts uint64, providedSig string) error {
+	sigHex, sigBase64, err := signOpenRequest(base64Secret, member, tool, ts)
 	if err != nil {
 		return err
 	}
 
-	// Try hex first
-	if decodedHex, errHex := hex.DecodeString(providedSig); errHex == nil {
-		expectedHex, _ := hex.DecodeString(sigHex) // should not fail
-		if subtle.ConstantTimeCompare(decodedHex, expectedHex) == 1 {
+	// Try hex
+	if decoded, err := hex.DecodeString(providedSig); err == nil {
+		expected, _ := hex.DecodeString(sigHex)
+		if subtle.ConstantTimeCompare(decoded, expected) == 1 {
 			return nil
 		}
 	}
 
-	// Try base64 next
-	if decodedB64, errB64 := base64.StdEncoding.DecodeString(providedSig); errB64 == nil {
-		expectedB64, _ := base64.StdEncoding.DecodeString(sigBase64)
-		if subtle.ConstantTimeCompare(decodedB64, expectedB64) == 1 {
+	// Try base64
+	if decoded, err := base64.StdEncoding.DecodeString(providedSig); err == nil {
+		expected, _ := base64.StdEncoding.DecodeString(sigBase64)
+		if subtle.ConstantTimeCompare(decoded, expected) == 1 {
 			return nil
 		}
 	}
 
-	return fmt.Errorf("Signature verification failed")
-}
-
-func onMessageReceived(client mqtt.Client, message mqtt.Message) {
-	//fmt.Printf("Received message on topic: %s\n", message.Topic())
-	//fmt.Printf("Message: %s\n", message.Payload())
-	var topic = fmt.Sprintf("ratt/control/node/%s/open", cfg.ClientID)
-
-	// Is this aun update ACL message? If so - Update
-	if message.Topic() == "ratt/control/broadcast/acl/update" {
-		fmt.Println("Got ACL Update message")
-		GetACLList()
-	} else if message.Topic() == topic {
-		fmt.Println("Got OPEN request")
-		if cfg.OpenSecret == "" {
-			fmt.Printf("No OpenSecret configured - remote open disabled")
-			return
-		}
-		if cfg.OpenToolName == "" {
-			fmt.Printf("No OpenToolName configured - remote open disabled")
-			return
-		}
-		var request OpenRequest
-		err := json.Unmarshal(message.Payload(), &request)
-		if err != nil {
-			fmt.Println("Error decoding JSON:", err)
-			return
-		}
-
-		err = VerifyOpenRequestSignature(cfg.OpenSecret, request.Member, request.ToolName, request.Timestamp, request.Signature)
-		if err != nil {
-			fmt.Printf("Open request verification failed: %s\n", err)
-			return
-		}
-
-		if cfg.OpenToolName != request.ToolName {
-			fmt.Printf("Wrong toolname \"%s\" - expected \"%s\"\n", request.ToolName, cfg.OpenToolName)
-			return
-		}
-		fmt.Printf("Open request member \"%s\" door \"%s\" Timestamp \"%d\" Signature \"%s\"\n", request.Member, request.ToolName, request.Timestamp, request.Signature)
-
-		timestamp := time.Unix(int64(request.Timestamp), 0) // seconds + 0 nanos
-		windowStart := timestamp.Add(-5 * time.Minute)
-		windowEnd := timestamp.Add(5 * time.Minute)
-		now := time.Now()
-
-		if now.Before(windowStart) || now.After(windowEnd) {
-			fmt.Println("Open request timeout")
-			return
-		}
-
-		var topic string = fmt.Sprintf("ratt/status/node/%s/personality/access", cfg.ClientID)
-		var message string = fmt.Sprintf("{\"allowed\":1,\"member\":\"%s\"}", request.Member)
-		client.Publish(topic, 0, false, message)
-		open_servo(cfg.ServoOpen, cfg.ServoClose, cfg.WaitSecs, cfg.Mode)
-	}
-}
-
-func PingSender() {
-
-	for {
-		var topic string = fmt.Sprintf("ratt/status/node/%s/ping", cfg.ClientID)
-		var message string = "{\"status\":\"ok\"}"
-		client.Publish(topic, 0, false, message)
-		time.Sleep(120 * time.Second)
-	}
-}
-
-// Read from KEYBOARD in simple 10h + cr format
-func readkdb_10h() {
-	fmt.Println("USB 10H Keyboard mode")
-	device, err := evdev.OpenFile(cfg.NFCdevice)
-	if err != nil {
-		log.Fatal("Error Opening NFC device : ", err)
-		return
-	}
-	defer device.Close()
-
-	fmt.Printf("Opened keyboard device: %s\n", device.Name()) // Device name from evdev
-	fmt.Printf("Vendor: 0x%04x, Product: 0x%04x\n", device.ID().Vendor, device.ID().Product)
-	fmt.Println("Listening for keyboard events. Press keys to see output.")
-	fmt.Println("Press Ctrl+C to exit.")
-	ch := device.Poll(context.Background())
-	strbuf := ""
-loop:
-	for {
-		select {
-		case event := <-ch:
-			// channel closed
-			if event == nil {
-				break loop
-			}
-
-			switch event.Type.(type) {
-			case evdev.KeyType:
-				if event.Value == 1 {
-					//log.Printf("received key event: %+v TYPE:%+v/%T", event,event.Type,event.Type)
-					if event.Type == evdev.KeyEnter {
-						number, err := strconv.ParseUint(strbuf, 16, 64)
-						number &= 0xffffffff
-						log.Printf("Got 10h String %s BadgeId %d\n", strbuf, number)
-						if err == nil {
-							BadgeTag(number)
-						} else {
-							log.Printf("Bad hex badge line \"%s\"\n", strbuf)
-						}
-						strbuf = ""
-					} else {
-						//log.Printf("KEY (%d) \"%s\"\n",event.Type,event.Type)
-						s := evdev.KeyType(event.Code).String()
-						//log.Printf("ecode %+v keytype %T \"%v\"\n",event.Code,s,s)
-						strbuf += s
-						//log.Printf("strbuf now \"%s\"\n",strbuf)
-					}
-				}
-
-			}
-		}
-	}
-}
-
-func NFClistener() {
-	if cfg.NFCmode == "wiegland" {
-		reader := &wiegland.RFIDReader{}
-		if err := reader.Initialize(cfg.NFCdevice, 9600); err != nil {
-			log.Fatalf("Wiegland init failed: %v", err)
-		}
-		defer reader.Close()
-
-		for {
-			tag, err := reader.GetCard()
-			if err != nil {
-				fmt.Println("Weigland error", err)
-			} else {
-				if tag != 0 {
-					fmt.Println("Got Wiegland tag", tag)
-					BadgeTag(tag)
-				}
-				time.Sleep(time.Second)
-			}
-
-		}
-	} else if cfg.NFCmode == "10h-kbd" {
-		// 10 hex digits - USB Keyboard device
-		readkdb_10h()
-	} else {
-		for {
-			// Default - Serial device w/ weird protocol
-			tag := readrfid()
-			//var tag uint64
-			//tag = 0
-			//time.Sleep(time.Second * 3)
-			if tag != 0 {
-				fmt.Println("Got RFID", tag)
-				BadgeTag(tag)
-			}
-		}
-	}
-}
-
-// This reads regular numbers from the device
-func OLD_NFClistener() {
-
-	file, err := os.Open(cfg.NFCdevice)
-	if err != nil {
-		log.Fatal("Error Opening NFC device : ", err)
-		return
-	}
-	defer file.Close()
-
-	// Create a bufio.Scanner to read lines from the file
-	scanner := bufio.NewScanner(file)
-
-	// Loop through each line
-	for scanner.Scan() {
-		line := scanner.Text()
-		fmt.Println("Got NFC Tag: " + line)
-		// Convert the line to an integer
-		number, err := strconv.ParseUint(line, 10, 64)
-		if err != nil {
-			fmt.Println("Error converting to integer:", err)
-		} else {
-			fmt.Println("Got tag number", number)
-		}
-		BadgeTag(number)
-	}
-
-	// Check for errors from scanner
-	if err := scanner.Err(); err != nil {
-		fmt.Println("Error reading file:", err)
-	}
-
-}
-
-func mqttconnect() {
-	// Connect to the MQTT broker
-	if token := client.Connect(); token.Wait() && token.Error() != nil {
-		log.Fatal("MQTT Connect error: ", token.Error())
-	}
-	fmt.Println("MQTT Connected")
-}
-
-func main() {
-	fmt.Printf("goratt build %s\n", myBuild) // Must build via makefile for this to work
-	openflag := flag.Bool("holdopen", false, "Hold door open indefinitley")
-	cfgfile := flag.String("cfg", "goratt.cfg", "Config file")
-	flag.Parse()
-
-	f, err := os.Open(*cfgfile)
-	decoder := yaml.NewDecoder(f)
-	err = decoder.Decode(&cfg)
-	if err != nil {
-		log.Fatal("Config Decode error: ", err)
-	}
-
-	if cfg.ClientID == "" {
-		panic("ClientID missing in Config file")
-	}
-
-	myOpenTopic = fmt.Sprintf("ratt/control/node/%s/open", cfg.ClientID)
-	if cfg.LEDpipe != "" {
-		LEDfile, err = os.OpenFile(cfg.LEDpipe, os.O_RDWR, 0644)
-		if LEDfile == nil {
-			log.Fatal("Error opening LED pipe: ", err)
-		}
-		defer LEDfile.Close()
-	}
-	hw, err := govattu.Open()
-	if err != nil {
-		panic(err)
-	}
-	if cfg.RedLED != nil {
-		hw.PinMode(*cfg.RedLED, govattu.ALToutput)
-		hw.PinSet(*cfg.RedLED)
-	}
-	if cfg.GreenLED != nil {
-		hw.PinMode(*cfg.GreenLED, govattu.ALToutput)
-		hw.PinSet(*cfg.GreenLED)
-	}
-	if cfg.YellowLED != nil {
-		hw.PinMode(*cfg.YellowLED, govattu.ALToutput)
-		hw.PinSet(*cfg.YellowLED)
-	}
-	hw.ZeroPinEventDetectMask()
-
-	if *openflag {
-		open_servo(cfg.ServoOpen, cfg.ServoClose, cfg.WaitSecs, cfg.Mode)
-	}
-
-	// MQTT broker address
-	broker := fmt.Sprintf("ssl://%s:%d", cfg.MqttHost, cfg.MqttPort)
-
-	// MQTT client ID
-	clientID := cfg.ClientID
-
-	// Load client key pair for TLS (replace with your own paths)
-	cert, err := tls.LoadX509KeyPair(cfg.ClientCert, cfg.ClientKey)
-	if err != nil {
-		log.Fatal("Error loading X509 Keypair: ", err)
-	}
-
-	// Load your CA certificate (replace with your own path)
-	caCert, err := ioutil.ReadFile(cfg.CACert)
-	if err != nil {
-		log.Fatal("Error reading CA file: ", cfg.CACert, err)
-	}
-
-	// Create a certificate pool and add your CA certificate
-	caPool := x509.NewCertPool()
-	caPool.AppendCertsFromPEM(caCert)
-
-	// Create a TLS configuration
-	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		RootCAs:      caPool,
-	}
-
-	// Create an MQTT client options
-	opts := mqtt.NewClientOptions().
-		AddBroker(broker).
-		SetClientID(clientID).
-		SetAutoReconnect(true).
-		SetConnectRetry(true).
-		SetKeepAlive(60 * time.Second).
-		SetTLSConfig(tlsConfig).
-		SetConnectionLostHandler(onConnectionLost).
-		SetOnConnectHandler(onConnectHandler).
-		SetDefaultPublishHandler(onMessageReceived)
-
-	// Create an MQTT client
-	client = mqtt.NewClient(opts)
-
-	mqtt.ERROR = log.New(os.Stdout, "[ERROR] ", 0)
-	mqtt.CRITICAL = log.New(os.Stdout, "[CRIT] ", 0)
-	mqtt.WARN = log.New(os.Stdout, "[WARN]  ", 0)
-	//mqtt.DEBUG = log.New(os.Stdout, "[DEBUG] ", 0)
-
-	ReadTagFile()
-	GetACLList()
-
-	if cfg.RedLED != nil {
-		hw.PinClear(*cfg.RedLED)
-	}
-	if cfg.GreenLED != nil {
-		hw.PinClear(*cfg.GreenLED)
-	}
-	if cfg.YellowLED != nil {
-		hw.PinClear(*cfg.YellowLED)
-	}
-	hw.Close()
-
-	LEDupdateIdleString(LEDconnectionLost)
-	LEDwriteString(LEDconnectionLost)
-
-	go mqttconnect()
-	go NFClistener()
-	go PingSender()
-
-	//dymo_label("- Ready -")
-	// Wait for a signal to exit
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
-	signal.Notify(c, os.Kill)
-	signal.Notify(c, syscall.SIGTERM)
-	//fmt.Println("Waitsignal")
-	<-c
-
-	fmt.Println("Got Terminate Signal")
-	// Disconnect from the MQTT broker
-	client.Disconnect(250)
-	fmt.Println("Disconnected from the MQTT broker")
-	LEDwriteString(LEDterminated)
+	return fmt.Errorf("signature verification failed")
 }

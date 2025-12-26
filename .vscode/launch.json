@@ -1,0 +1,43 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug GoRATT",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}",
+      "cwd": "${workspaceFolder}",
+      "args": [
+        "-cfg",
+        "${workspaceFolder}/goratt.cfg"
+      ]
+    },
+    {
+      "name": "Debug GoRATT (hold open)",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}",
+      "cwd": "${workspaceFolder}",
+      "args": [
+        "-cfg",
+        "${workspaceFolder}/goratt.cfg",
+        "-holdopen"
+      ]
+    },
+    {
+      "name": "Run GoRATT (exec built binary)",
+      "type": "go",
+      "request": "launch",
+      "mode": "exec",
+      "program": "${workspaceFolder}/goratt",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "go: build",
+      "args": [
+        "-cfg",
+        "${workspaceFolder}/goratt.cfg"
+      ]
+    }
+  ]
+}
