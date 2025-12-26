@@ -5,26 +5,23 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"gopkg.in/yaml.v2"
 
 	"goratt/door"
 	"goratt/indicator"
+	"goratt/mqtt"
 	"goratt/reader"
 )
 
@@ -33,7 +30,7 @@ var myBuild string
 // App holds the application state and dependencies.
 type App struct {
 	cfg       *Config
-	client    mqtt.Client
+	mqtt      *mqtt.Client
 	reader    reader.TagReader
 	door      door.DoorOpener
 	indicator indicator.Indicator
@@ -105,7 +102,7 @@ func main() {
 	app.acl = NewACLManager(&cfg)
 	app.acl.SetUpdateCallback(func() {
 		topic := fmt.Sprintf("ratt/status/node/%s/acl/update", cfg.ClientID)
-		app.client.Publish(topic, 0, false, `{"status":"downloaded"}`)
+		app.mqtt.Publish(topic, `{"status":"downloaded"}`)
 	})
 
 	// Load existing ACL from file, then fetch from API
@@ -123,10 +120,21 @@ func main() {
 	}
 
 	// Initialize MQTT
-	app.initMQTT()
+	app.mqtt, err = mqtt.New(cfg.MQTT, cfg.ClientID, mqtt.Handlers{
+		OnConnect:    app.onMQTTConnect,
+		OnDisconnect: app.onMQTTDisconnect,
+		OnMessage:    app.onMQTTMessage,
+	})
+	if err != nil {
+		log.Fatalf("Init MQTT: %v", err)
+	}
 
 	// Start background goroutines
-	go app.mqttConnect()
+	go func() {
+		if err := app.mqtt.Connect(); err != nil {
+			log.Printf("MQTT connect: %v", err)
+		}
+	}()
 	go app.tagListener()
 	go app.pingSender()
 
@@ -139,7 +147,7 @@ func main() {
 	cancel()
 
 	// Cleanup
-	app.client.Disconnect(250)
+	app.mqtt.Disconnect()
 	app.reader.Close()
 	app.door.Release()
 	app.indicator.Shutdown()
@@ -148,77 +156,27 @@ func main() {
 	fmt.Println("Shutdown complete")
 }
 
-func (app *App) initMQTT() {
-	broker := fmt.Sprintf("ssl://%s:%d", app.cfg.MQTT.Host, app.cfg.MQTT.Port)
-
-	cert, err := tls.LoadX509KeyPair(app.cfg.MQTT.ClientCert, app.cfg.MQTT.ClientKey)
-	if err != nil {
-		log.Fatalf("Load X509 keypair: %v", err)
-	}
-
-	caCert, err := ioutil.ReadFile(app.cfg.MQTT.CACert)
-	if err != nil {
-		log.Fatalf("Read CA cert: %v", err)
-	}
-
-	caPool := x509.NewCertPool()
-	caPool.AppendCertsFromPEM(caCert)
-
-	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		RootCAs:      caPool,
-	}
-
-	opts := mqtt.NewClientOptions().
-		AddBroker(broker).
-		SetClientID(app.cfg.ClientID).
-		SetAutoReconnect(true).
-		SetConnectRetry(true).
-		SetKeepAlive(60 * time.Second).
-		SetTLSConfig(tlsConfig).
-		SetConnectionLostHandler(app.onConnectionLost).
-		SetOnConnectHandler(app.onConnect).
-		SetDefaultPublishHandler(app.onMessage)
-
-	app.client = mqtt.NewClient(opts)
-
-	mqtt.ERROR = log.New(os.Stdout, "[ERROR] ", 0)
-	mqtt.CRITICAL = log.New(os.Stdout, "[CRIT] ", 0)
-	mqtt.WARN = log.New(os.Stdout, "[WARN]  ", 0)
-}
-
-func (app *App) mqttConnect() {
-	if token := app.client.Connect(); token.Wait() && token.Error() != nil {
-		log.Fatalf("MQTT connect: %v", token.Error())
-	}
-	fmt.Println("MQTT connected")
-}
-
-func (app *App) onConnect(client mqtt.Client) {
-	fmt.Println("MQTT connection established")
-
+func (app *App) onMQTTConnect() {
 	// Subscribe to broadcast ACL update
-	topic := "ratt/control/broadcast/acl/update"
-	if token := client.Subscribe(topic, 0, nil); token.Wait() && token.Error() != nil {
-		log.Printf("Subscribe error: %v", token.Error())
+	if err := app.mqtt.Subscribe("ratt/control/broadcast/acl/update"); err != nil {
+		log.Printf("Subscribe error: %v", err)
 	}
 
 	// Subscribe to node-specific open command
 	openTopic := fmt.Sprintf("ratt/control/node/%s/open", app.cfg.ClientID)
-	if token := client.Subscribe(openTopic, 0, nil); token.Wait() && token.Error() != nil {
-		log.Printf("Subscribe error: %v", token.Error())
+	if err := app.mqtt.Subscribe(openTopic); err != nil {
+		log.Printf("Subscribe error: %v", err)
 	}
 
 	app.indicator.Idle()
 }
 
-func (app *App) onConnectionLost(client mqtt.Client, err error) {
-	fmt.Printf("MQTT connection lost: %v\n", err)
+func (app *App) onMQTTDisconnect() {
 	app.indicator.ConnectionLost()
 }
 
-func (app *App) onMessage(client mqtt.Client, msg mqtt.Message) {
-	switch msg.Topic() {
+func (app *App) onMQTTMessage(topic string, payload []byte) {
+	switch topic {
 	case "ratt/control/broadcast/acl/update":
 		fmt.Println("Received ACL update message")
 		if err := app.acl.FetchFromAPI(); err != nil {
@@ -228,8 +186,8 @@ func (app *App) onMessage(client mqtt.Client, msg mqtt.Message) {
 	default:
 		// Check if it's an open command for this node
 		openTopic := fmt.Sprintf("ratt/control/node/%s/open", app.cfg.ClientID)
-		if msg.Topic() == openTopic {
-			app.handleOpenRequest(msg.Payload())
+		if topic == openTopic {
+			app.handleOpenRequest(payload)
 		}
 	}
 }
@@ -343,7 +301,7 @@ func (app *App) publishAccess(member string, allowed bool) {
 	}
 	topic := fmt.Sprintf("ratt/status/node/%s/personality/access", app.cfg.ClientID)
 	msg := fmt.Sprintf(`{"allowed":%d,"member":"%s"}`, allowedInt, member)
-	app.client.Publish(topic, 0, false, msg)
+	app.mqtt.Publish(topic, msg)
 }
 
 func (app *App) pingSender() {
@@ -356,7 +314,7 @@ func (app *App) pingSender() {
 			return
 		case <-ticker.C:
 			topic := fmt.Sprintf("ratt/status/node/%s/ping", app.cfg.ClientID)
-			app.client.Publish(topic, 0, false, `{"status":"ok"}`)
+			app.mqtt.Publish(topic, `{"status":"ok"}`)
 		}
 	}
 }

@@ -3,13 +3,14 @@ package main
 import (
 	"goratt/door"
 	"goratt/indicator"
+	"goratt/mqtt"
 	"goratt/reader"
 )
 
 // Config is the main configuration structure for GoRATT.
 type Config struct {
 	// MQTT connection settings
-	MQTT MQTTConfig `yaml:"mqtt"`
+	MQTT mqtt.Config `yaml:"mqtt"`
 
 	// API settings for ACL backend
 	API APIConfig `yaml:"api"`
@@ -30,15 +31,6 @@ type Config struct {
 	WaitSecs     int    `yaml:"wait_secs"`
 	OpenSecret   string `yaml:"open_secret"`
 	OpenToolName string `yaml:"open_tool_name"`
-}
-
-// MQTTConfig holds MQTT broker connection settings.
-type MQTTConfig struct {
-	Host       string `yaml:"host"`
-	Port       int    `yaml:"port"`
-	CACert     string `yaml:"ca_cert"`
-	ClientCert string `yaml:"client_cert"`
-	ClientKey  string `yaml:"client_key"`
 }
 
 // APIConfig holds API backend settings.

@@ -43,13 +43,17 @@ The configuration file uses YAML format with nested sections.
 
 ## MQTT Settings (`mqtt:`)
 
+MQTT is **optional**. If `host` is omitted or empty, MQTT is disabled and the system operates in standalone mode (local ACL only, no remote open commands).
+
+TLS is also **optional**. If no TLS certificates are provided, the connection uses plain TCP (default port 1883). If any TLS option is provided, the connection uses SSL (default port 8883).
+
 | Parameter | Description |
 | --------- | ----------- |
-| `host` | Hostname of MQTT server |
-| `port` | Port number of MQTT server |
-| `ca_cert` | Path to Root CA certificate for MQTT server |
-| `client_cert` | Path to client TLS certificate |
-| `client_key` | Path to client TLS key |
+| `host` | Hostname of MQTT server. **Leave empty to disable MQTT.** |
+| `port` | Port number (default: 1883 for non-TLS, 8883 for TLS) |
+| `ca_cert` | Path to Root CA certificate (optional, enables TLS) |
+| `client_cert` | Path to client TLS certificate (optional) |
+| `client_key` | Path to client TLS key (optional) |
 
 ## API Settings (`api:`)
 
