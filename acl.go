@@ -160,9 +160,21 @@ func (a *ACLManager) FetchFromAPI() error {
 }
 
 // LoadFromFile loads the ACL list from the tag file.
+// Creates the file if it doesn't exist.
 func (a *ACLManager) LoadFromFile() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+
+	// Create file if it doesn't exist
+	if _, err := os.Stat(a.tagFile); os.IsNotExist(err) {
+		file, err := os.Create(a.tagFile)
+		if err != nil {
+			return fmt.Errorf("create tag file: %w", err)
+		}
+		file.Close()
+		log.Printf("Created empty tag file: %s", a.tagFile)
+		return nil
+	}
 
 	file, err := os.Open(a.tagFile)
 	if err != nil {

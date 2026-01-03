@@ -5,11 +5,24 @@ Go-based RATT client
 # Build
 
 1. Clone repo
-2. `go build`
+2. `make all` (or `go build`)
 
 For ARM (Raspberry Pi) builds:
-- 32-bit: `GOARCH=arm go build`
-- 64-bit: `GOARCH=arm64 go build`
+- 32-bit: `make goratt_arm`
+- 64-bit: `make goratt_arm64`
+
+## Screen Support
+
+To build with framebuffer video display support, use the screen targets:
+
+```
+make all-screen        # All platforms with screen support
+make goratt_x86_screen # x86 with screen
+make goratt_arm_screen # ARM32 with screen
+make goratt_arm64_screen # ARM64 with screen
+```
+
+Or manually: `go build -tags=screen`
 
 # Configure
 
@@ -106,8 +119,11 @@ TLS is also **optional**. If no TLS certificates are provided, the connection us
 | `yellow_pin` | GPIO pin for "Opening" LED (usually 25) |
 | `red_pin` | GPIO pin for "Access Denied" LED (usually 23) |
 | `neopixel_pipe` | Path to named pipe for neopixel commands |
+| `video_enabled` | Enable framebuffer video display (requires screen build) |
 
 All indicator settings are optional. Omit or set to null to disable.
+
+**Note:** `video_enabled` requires building with `-tags=screen`. If enabled in config but not compiled in, the program will fail with an error.
 
 # Neopixel Support
 
