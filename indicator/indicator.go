@@ -1,5 +1,7 @@
 package indicator
 
+import "goratt/video"
+
 // Indicator is the interface for status indicator implementations (LEDs, neopixels, etc).
 type Indicator interface {
 	// Idle sets the indicator to idle/ready state.
@@ -33,6 +35,9 @@ type Config struct {
 
 	// Neopixel pipe path (empty = not configured)
 	NeopixelPipe string `yaml:"neopixel_pipe"`
+
+	// Video framebuffer display (true = enabled)
+	VideoEnabled bool `yaml:"video_enabled"`
 }
 
 // New creates an Indicator based on the provided configuration.
@@ -56,6 +61,18 @@ func New(cfg Config) (Indicator, error) {
 			return nil, err
 		}
 		indicators = append(indicators, neo)
+	}
+
+	// Add Video indicator if enabled
+	if cfg.VideoEnabled {
+		if !video.ScreenSupported() {
+			return nil, video.ErrScreenNotCompiled
+		}
+		vid, err := NewVideo()
+		if err != nil {
+			return nil, err
+		}
+		indicators = append(indicators, vid)
 	}
 
 	if len(indicators) == 0 {

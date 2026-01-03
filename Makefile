@@ -1,10 +1,34 @@
+BUILD_VERSION := $(shell git branch --show-current)-$(shell date +%a-%b-%d-%Y+%I:%M%p)
+LDFLAGS := -ldflags="-X main.myBuild=$(BUILD_VERSION)"
+
+# Default: build all variants without screen support
 all: goratt_x86 goratt_arm goratt_arm64
 
-goratt_x86: *.go
-	go build -o goratt -ldflags="-X main.myBuild="`git branch --show-current`-`date +%a-%b-%d-%Y+%I:%M%p`""
+# Build all variants with screen support
+all-screen: goratt_x86_screen goratt_arm_screen goratt_arm64_screen
 
-goratt_arm: *.go
-	GOARCH=arm go build -o goratt_arm -ldflags="-X main.myBuild="`git branch --show-current`-`date +%a-%b-%d-%Y+%I:%M%p`""
+# x86 builds
+goratt_x86:
+	go build -o goratt $(LDFLAGS)
 
-goratt_arm64: *.go
-	GOARCH=arm64 go build -o goratt_arm64 -ldflags="-X main.myBuild="`git branch --show-current`-`date +%a-%b-%d-%Y+%I:%M%p`""
+goratt_x86_screen:
+	go build -tags=screen -o goratt_screen $(LDFLAGS)
+
+# ARM (32-bit) builds
+goratt_arm:
+	GOARCH=arm go build -o goratt_arm $(LDFLAGS)
+
+goratt_arm_screen:
+	GOARCH=arm go build -tags=screen -o goratt_arm_screen $(LDFLAGS)
+
+# ARM64 builds
+goratt_arm64:
+	GOARCH=arm64 go build -o goratt_arm64 $(LDFLAGS)
+
+goratt_arm64_screen:
+	GOARCH=arm64 go build -tags=screen -o goratt_arm64_screen $(LDFLAGS)
+
+clean:
+	rm -f goratt goratt_screen goratt_arm goratt_arm_screen goratt_arm64 goratt_arm64_screen
+
+.PHONY: all all-screen clean goratt_x86 goratt_x86_screen goratt_arm goratt_arm_screen goratt_arm64 goratt_arm64_screen
