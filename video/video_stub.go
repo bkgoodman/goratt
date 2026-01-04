@@ -15,16 +15,16 @@ func New() (*Video, error) {
 	return nil, ErrScreenNotCompiled
 }
 
-func (v *Video) Idle()                 {}
-func (v *Video) Granted()              {}
-func (v *Video) Denied()               {}
-func (v *Video) Opening()              {}
-func (v *Video) ConnectionLost()       {}
-func (v *Video) Shutdown()             {}
-func (v *Video) Release() error        { return nil }
-func (v *Video) DisplayNumber(n int64) {}
-func (v *Video) Width() int            { return 0 }
-func (v *Video) Height() int           { return 0 }
+func (v *Video) Idle()                                    {}
+func (v *Video) Granted(member, nickname, warning string) {}
+func (v *Video) Denied(member, nickname, warning string)  {}
+func (v *Video) Opening(member, nickname, warning string) {}
+func (v *Video) ConnectionLost()                          {}
+func (v *Video) Shutdown()                                {}
+func (v *Video) Release() error                           { return nil }
+func (v *Video) DisplayNumber(n int64)                    {}
+func (v *Video) Width() int                               { return 0 }
+func (v *Video) Height() int                              { return 0 }
 
 // Rotary is a stub when screen support is not compiled in.
 type Rotary struct{}

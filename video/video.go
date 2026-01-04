@@ -129,7 +129,7 @@ func (v *Video) Idle() {
 }
 
 // Granted implements indicator.Indicator.
-func (v *Video) Granted() {
+func (v *Video) Granted(member, nickname, warning string) {
 	if !v.initialized {
 		return
 	}
@@ -138,12 +138,31 @@ func (v *Video) Granted() {
 	v.dc.Fill()
 
 	v.setFontSize(64)
-	v.drawCentered("Access Granted", float64(v.height/2), 1, 1, 1)
+	y := float64(v.height/2) - 40
+	v.drawCentered("Access Granted", y, 1, 1, 1)
+
+	// Display name (prefer nickname, fall back to member)
+	v.setFontSize(48)
+	displayName := nickname
+	if displayName == "" {
+		displayName = member
+	}
+	if displayName != "" {
+		v.drawCentered(displayName, y+70, 1, 1, 1)
+	}
+
+	// Display warning if present
+	if warning != "" {
+		v.setFontSize(32)
+		v.dc.SetRGB(1, 1, 0) // Yellow warning text
+		v.dc.DrawStringAnchored(warning, float64(v.width/2), y+130, 0.5, 0.5)
+	}
+
 	v.update()
 }
 
 // Denied implements indicator.Indicator.
-func (v *Video) Denied() {
+func (v *Video) Denied(member, nickname, warning string) {
 	if !v.initialized {
 		return
 	}
@@ -152,12 +171,31 @@ func (v *Video) Denied() {
 	v.dc.Fill()
 
 	v.setFontSize(64)
-	v.drawCentered("Access Denied", float64(v.height/2), 1, 1, 1)
+	y := float64(v.height/2) - 40
+	v.drawCentered("Access Denied", y, 1, 1, 1)
+
+	// Display name if known
+	displayName := nickname
+	if displayName == "" {
+		displayName = member
+	}
+	if displayName != "" {
+		v.setFontSize(48)
+		v.drawCentered(displayName, y+70, 1, 1, 1)
+	}
+
+	// Display warning/reason if present
+	if warning != "" {
+		v.setFontSize(32)
+		v.dc.SetRGB(1, 1, 0) // Yellow warning text
+		v.dc.DrawStringAnchored(warning, float64(v.width/2), y+130, 0.5, 0.5)
+	}
+
 	v.update()
 }
 
 // Opening implements indicator.Indicator.
-func (v *Video) Opening() {
+func (v *Video) Opening(member, nickname, warning string) {
 	if !v.initialized {
 		return
 	}
@@ -166,7 +204,26 @@ func (v *Video) Opening() {
 	v.dc.Fill()
 
 	v.setFontSize(64)
-	v.drawCentered("Opening...", float64(v.height/2), 0, 0, 0)
+	y := float64(v.height/2) - 40
+	v.drawCentered("Opening...", y, 0, 0, 0)
+
+	// Display name
+	displayName := nickname
+	if displayName == "" {
+		displayName = member
+	}
+	if displayName != "" {
+		v.setFontSize(48)
+		v.drawCentered(displayName, y+70, 0, 0, 0)
+	}
+
+	// Display warning if present
+	if warning != "" {
+		v.setFontSize(32)
+		v.dc.SetRGB(0.7, 0, 0) // Red warning text on yellow background
+		v.dc.DrawStringAnchored(warning, float64(v.width/2), y+130, 0.5, 0.5)
+	}
+
 	v.update()
 }
 

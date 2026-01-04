@@ -14,10 +14,10 @@ func NewVideo() (*VideoIndicator, error) {
 // VideoIndicator is a stub when screen support is not compiled in.
 type VideoIndicator struct{}
 
-func (vi *VideoIndicator) Idle()           {}
-func (vi *VideoIndicator) Granted()        {}
-func (vi *VideoIndicator) Denied()         {}
-func (vi *VideoIndicator) Opening()        {}
-func (vi *VideoIndicator) ConnectionLost() {}
-func (vi *VideoIndicator) Shutdown()       {}
-func (vi *VideoIndicator) Release() error  { return nil }
+func (vi *VideoIndicator) Idle()                    {}
+func (vi *VideoIndicator) Granted(info *AccessInfo) {}
+func (vi *VideoIndicator) Denied(info *AccessInfo)  {}
+func (vi *VideoIndicator) Opening(info *AccessInfo) {}
+func (vi *VideoIndicator) ConnectionLost()          {}
+func (vi *VideoIndicator) Shutdown()                {}
+func (vi *VideoIndicator) Release() error           { return nil }

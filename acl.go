@@ -11,7 +11,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -31,10 +33,12 @@ type ACLEntry struct {
 
 // ACLRecord is the in-memory representation of an ACL entry.
 type ACLRecord struct {
-	Tag     uint64
-	Level   int
-	Member  string
-	Allowed bool
+	Tag      uint64
+	Level    int
+	Member   string
+	Nickname string
+	Warning  string
+	Allowed  bool
 }
 
 // ACLManager handles ACL list management.
@@ -134,17 +138,20 @@ func (a *ACLManager) FetchFromAPI() error {
 
 		allowed := item.Allowed == "allowed"
 		a.tags = append(a.tags, ACLRecord{
-			Tag:     number,
-			Level:   item.Level,
-			Member:  item.Member,
-			Allowed: allowed,
+			Tag:      number,
+			Level:    item.Level,
+			Member:   item.Member,
+			Nickname: item.Nickname,
+			Warning:  item.Warning,
+			Allowed:  allowed,
 		})
 
 		access := "denied"
 		if allowed {
 			access = "allowed"
 		}
-		fmt.Fprintf(file, "%d %s %d %s\n", number, access, item.Level, item.Member)
+		// Format: tag access level member nickname warning (tab-separated for nickname/warning which may have spaces)
+		fmt.Fprintf(file, "%d\t%s\t%d\t%s\t%s\t%s\n", number, access, item.Level, item.Member, item.Nickname, item.Warning)
 	}
 	file.Close()
 
@@ -165,18 +172,14 @@ func (a *ACLManager) LoadFromFile() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	// Create file if it doesn't exist
-	if _, err := os.Stat(a.tagFile); os.IsNotExist(err) {
-		file, err := os.Create(a.tagFile)
-		if err != nil {
-			return fmt.Errorf("create tag file: %w", err)
-		}
-		file.Close()
-		log.Printf("Created empty tag file: %s", a.tagFile)
-		return nil
+	// Ensure parent directory exists
+	dir := filepath.Dir(a.tagFile)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create tag file directory: %w", err)
 	}
 
-	file, err := os.Open(a.tagFile)
+	// Try to open the file, create if it doesn't exist
+	file, err := os.OpenFile(a.tagFile, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		return fmt.Errorf("open tag file: %w", err)
 	}
@@ -186,20 +189,37 @@ func (a *ACLManager) LoadFromFile() error {
 
 	a.tags = a.tags[:0]
 	for scanner.Scan() {
+		line := scanner.Text()
+		parts := strings.Split(line, "\t")
+
+		// Support both old format (space-separated, 4 fields) and new format (tab-separated, 6 fields)
 		var tag uint64
 		var level int
-		var member, access string
+		var member, access, nickname, warning string
 
-		_, err := fmt.Sscanf(scanner.Text(), "%d %s %d %s", &tag, &access, &level, &member)
-		if err != nil {
-			continue
+		if len(parts) >= 6 {
+			// New tab-separated format
+			tag, _ = strconv.ParseUint(parts[0], 10, 64)
+			access = parts[1]
+			level, _ = strconv.Atoi(parts[2])
+			member = parts[3]
+			nickname = parts[4]
+			warning = parts[5]
+		} else {
+			// Old space-separated format (backward compatibility)
+			_, err := fmt.Sscanf(line, "%d %s %d %s", &tag, &access, &level, &member)
+			if err != nil {
+				continue
+			}
 		}
 
 		a.tags = append(a.tags, ACLRecord{
-			Tag:     tag,
-			Level:   level,
-			Member:  member,
-			Allowed: access == "allowed",
+			Tag:      tag,
+			Level:    level,
+			Member:   member,
+			Nickname: nickname,
+			Warning:  warning,
+			Allowed:  access == "allowed",
 		})
 	}
 

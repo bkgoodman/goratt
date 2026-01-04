@@ -51,7 +51,7 @@ func (g *GPIO) Idle() {
 }
 
 // Granted implements Indicator.Granted.
-func (g *GPIO) Granted() {
+func (g *GPIO) Granted(info *AccessInfo) {
 	g.allOff()
 	if g.greenPin != nil {
 		g.hw.PinSet(*g.greenPin)
@@ -59,7 +59,7 @@ func (g *GPIO) Granted() {
 }
 
 // Denied implements Indicator.Denied.
-func (g *GPIO) Denied() {
+func (g *GPIO) Denied(info *AccessInfo) {
 	g.allOff()
 	if g.redPin != nil {
 		g.hw.PinSet(*g.redPin)
@@ -67,7 +67,7 @@ func (g *GPIO) Denied() {
 }
 
 // Opening implements Indicator.Opening.
-func (g *GPIO) Opening() {
+func (g *GPIO) Opening(info *AccessInfo) {
 	g.allOff()
 	if g.yellowPin != nil {
 		g.hw.PinSet(*g.yellowPin)

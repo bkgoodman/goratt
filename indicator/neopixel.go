@@ -40,17 +40,17 @@ func (n *Neopixel) Idle() {
 }
 
 // Granted implements Indicator.Granted.
-func (n *Neopixel) Granted() {
+func (n *Neopixel) Granted(info *AccessInfo) {
 	n.write(neoAccessGranted)
 }
 
 // Denied implements Indicator.Denied.
-func (n *Neopixel) Denied() {
+func (n *Neopixel) Denied(info *AccessInfo) {
 	n.write(neoAccessDenied)
 }
 
 // Opening implements Indicator.Opening.
-func (n *Neopixel) Opening() {
+func (n *Neopixel) Opening(info *AccessInfo) {
 	n.write(neoAccessGranted)
 }
 

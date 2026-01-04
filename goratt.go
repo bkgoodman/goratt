@@ -115,7 +115,7 @@ func main() {
 
 	// Handle holdopen flag
 	if *openflag {
-		app.openDoor("holdopen")
+		app.openDoor(&indicator.AccessInfo{Member: "holdopen"})
 		select {} // Block forever
 	}
 
@@ -224,7 +224,7 @@ func (app *App) handleOpenRequest(payload []byte) {
 
 	fmt.Printf("Remote open request from %s\n", req.Member)
 	app.publishAccess(req.Member, true)
-	app.openDoor(req.Member)
+	app.openDoor(&indicator.AccessInfo{Member: req.Member, Allowed: true})
 }
 
 func (app *App) tagListener() {
@@ -257,9 +257,20 @@ func (app *App) tagListener() {
 func (app *App) handleTag(tagID uint64) {
 	record, found := app.acl.Lookup(tagID)
 
+	// Create AccessInfo for indicator display
+	var info *indicator.AccessInfo
+	if found {
+		info = &indicator.AccessInfo{
+			Member:   record.Member,
+			Nickname: record.Nickname,
+			Warning:  record.Warning,
+			Allowed:  record.Allowed,
+		}
+	}
+
 	if !found {
 		fmt.Printf("Tag %d not found in ACL\n", tagID)
-		app.indicator.Denied()
+		app.indicator.Denied(nil)
 		time.Sleep(3 * time.Second)
 		app.indicator.Idle()
 		return
@@ -269,22 +280,22 @@ func (app *App) handleTag(tagID uint64) {
 	app.publishAccess(record.Member, record.Allowed)
 
 	if record.Allowed {
-		app.openDoor(record.Member)
+		app.openDoor(info)
 	} else {
-		app.indicator.Denied()
+		app.indicator.Denied(info)
 		time.Sleep(3 * time.Second)
 		app.indicator.Idle()
 	}
 }
 
-func (app *App) openDoor(member string) {
-	app.indicator.Opening()
+func (app *App) openDoor(info *indicator.AccessInfo) {
+	app.indicator.Opening(info)
 
 	if err := app.door.Open(); err != nil {
 		log.Printf("Door open: %v", err)
 	}
 
-	app.indicator.Granted()
+	app.indicator.Granted(info)
 	time.Sleep(time.Duration(app.cfg.WaitSecs) * time.Second)
 
 	if err := app.door.Close(); err != nil {

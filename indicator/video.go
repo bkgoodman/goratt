@@ -26,18 +26,30 @@ func (vi *VideoIndicator) Idle() {
 }
 
 // Granted implements Indicator.Granted.
-func (vi *VideoIndicator) Granted() {
-	vi.v.Granted()
+func (vi *VideoIndicator) Granted(info *AccessInfo) {
+	var member, nickname, warning string
+	if info != nil {
+		member, nickname, warning = info.Member, info.Nickname, info.Warning
+	}
+	vi.v.Granted(member, nickname, warning)
 }
 
 // Denied implements Indicator.Denied.
-func (vi *VideoIndicator) Denied() {
-	vi.v.Denied()
+func (vi *VideoIndicator) Denied(info *AccessInfo) {
+	var member, nickname, warning string
+	if info != nil {
+		member, nickname, warning = info.Member, info.Nickname, info.Warning
+	}
+	vi.v.Denied(member, nickname, warning)
 }
 
 // Opening implements Indicator.Opening.
-func (vi *VideoIndicator) Opening() {
-	vi.v.Opening()
+func (vi *VideoIndicator) Opening(info *AccessInfo) {
+	var member, nickname, warning string
+	if info != nil {
+		member, nickname, warning = info.Member, info.Nickname, info.Warning
+	}
+	vi.v.Opening(member, nickname, warning)
 }
 
 // ConnectionLost implements Indicator.ConnectionLost.

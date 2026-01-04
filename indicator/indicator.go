@@ -8,13 +8,16 @@ type Indicator interface {
 	Idle()
 
 	// Granted sets the indicator to access granted state.
-	Granted()
+	// info may be nil if no ACL information is available.
+	Granted(info *AccessInfo)
 
 	// Denied sets the indicator to access denied state.
-	Denied()
+	// info may be nil if no ACL information is available.
+	Denied(info *AccessInfo)
 
 	// Opening sets the indicator to door opening state.
-	Opening()
+	// info may be nil if no ACL information is available.
+	Opening(info *AccessInfo)
 
 	// ConnectionLost sets the indicator to connection lost state.
 	ConnectionLost()

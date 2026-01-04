@@ -8,13 +8,13 @@ type Noop struct{}
 func (n *Noop) Idle() {}
 
 // Granted implements Indicator.Granted.
-func (n *Noop) Granted() {}
+func (n *Noop) Granted(info *AccessInfo) {}
 
 // Denied implements Indicator.Denied.
-func (n *Noop) Denied() {}
+func (n *Noop) Denied(info *AccessInfo) {}
 
 // Opening implements Indicator.Opening.
-func (n *Noop) Opening() {}
+func (n *Noop) Opening(info *AccessInfo) {}
 
 // ConnectionLost implements Indicator.ConnectionLost.
 func (n *Noop) ConnectionLost() {}

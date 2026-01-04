@@ -13,23 +13,23 @@ func (m *Multi) Idle() {
 }
 
 // Granted implements Indicator.Granted.
-func (m *Multi) Granted() {
+func (m *Multi) Granted(info *AccessInfo) {
 	for _, ind := range m.indicators {
-		ind.Granted()
+		ind.Granted(info)
 	}
 }
 
 // Denied implements Indicator.Denied.
-func (m *Multi) Denied() {
+func (m *Multi) Denied(info *AccessInfo) {
 	for _, ind := range m.indicators {
-		ind.Denied()
+		ind.Denied(info)
 	}
 }
 
 // Opening implements Indicator.Opening.
-func (m *Multi) Opening() {
+func (m *Multi) Opening(info *AccessInfo) {
 	for _, ind := range m.indicators {
-		ind.Opening()
+		ind.Opening(info)
 	}
 }
 
