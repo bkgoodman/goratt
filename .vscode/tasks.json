@@ -14,6 +14,17 @@
         "kind": "build",
         "isDefault": true
       }
+    },
+    {
+      "label": "make run",
+      "type": "shell",
+      "command": "make",
+      "args": ["run"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": ["$go"],
+      "group": "build"
     }
   ]
 }

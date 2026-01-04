@@ -129,9 +129,14 @@ func buildTLSConfig(cfg Config) (*tls.Config, error) {
 	return tlsConfig, nil
 }
 
-// Connect connects to the MQTT broker. No-op if disabled.
+// Connect connects to the MQTT broker. If disabled, calls onConnect immediately.
 func (c *Client) Connect() error {
 	if !c.enabled {
+		// When MQTT is disabled, simulate successful connection
+		// so indicator goes to Idle state instead of ConnectionLost
+		if c.onConnect != nil {
+			c.onConnect()
+		}
 		return nil
 	}
 

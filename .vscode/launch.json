@@ -2,6 +2,12 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "command": "make run ; exit",
+      "name": "Copy to neopi",
+      "request": "launch",
+      "type": "node-terminal"
+    },
+    {
       "name": "Debug GoRATT",
       "type": "go",
       "request": "launch",

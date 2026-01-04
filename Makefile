@@ -28,7 +28,11 @@ goratt_arm64:
 goratt_arm64_screen:
 	GOARCH=arm64 go build -tags=screen -o goratt_arm64_screen $(LDFLAGS)
 
+# Build and deploy to neopi
+run: goratt_arm64_screen
+	scp goratt_arm64_screen bkg@neopi:
+
 clean:
 	rm -f goratt goratt_screen goratt_arm goratt_arm_screen goratt_arm64 goratt_arm64_screen
 
-.PHONY: all all-screen clean goratt_x86 goratt_x86_screen goratt_arm goratt_arm_screen goratt_arm64 goratt_arm64_screen
+.PHONY: all all-screen clean run goratt_x86 goratt_x86_screen goratt_arm goratt_arm_screen goratt_arm64 goratt_arm64_screen
