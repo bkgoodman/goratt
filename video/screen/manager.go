@@ -61,10 +61,10 @@ func (m *Manager) Register(id ScreenID, screen Screen) {
 // SwitchTo transitions to a new screen.
 func (m *Manager) SwitchTo(id ScreenID) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	screen, ok := m.screens[id]
 	if !ok {
+		m.mu.Unlock()
 		log.Printf("Screen: unknown screen ID %d", id)
 		return
 	}
@@ -76,8 +76,11 @@ func (m *Manager) SwitchTo(id ScreenID) {
 	}
 
 	m.current = screen
-	m.current.Init(m)
-	m.current.Update()
+	m.mu.Unlock()
+
+	// Call Init and Update outside the lock to allow SetTimeout to work
+	screen.Init(m)
+	screen.Update()
 }
 
 // Current returns the current screen, or nil if none.

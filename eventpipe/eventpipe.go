@@ -2,13 +2,14 @@ package eventpipe
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"log"
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
+	"time"
 
 	"goratt/video/screen"
 )
@@ -25,8 +26,7 @@ type EventHandler func(screen.Event)
 type EventPipe struct {
 	path    string
 	handler EventHandler
-	ctx     context.Context
-	cancel  context.CancelFunc
+	closed  atomic.Bool
 }
 
 // New creates a new EventPipe. Returns nil if path is empty.
@@ -43,13 +43,9 @@ func New(cfg Config, handler EventHandler) (*EventPipe, error) {
 		return nil, fmt.Errorf("create named pipe %s: %w", cfg.Path, err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-
 	ep := &EventPipe{
 		path:    cfg.Path,
 		handler: handler,
-		ctx:     ctx,
-		cancel:  cancel,
 	}
 
 	return ep, nil
@@ -60,58 +56,67 @@ func New(cfg Config, handler EventHandler) (*EventPipe, error) {
 func (ep *EventPipe) Start() {
 	log.Printf("Event pipe listening on %s", ep.path)
 
-	for {
-		select {
-		case <-ep.ctx.Done():
-			return
-		default:
-		}
-
-		// Open pipe for reading (blocks until writer connects)
-		// We open in non-blocking mode first, then switch to blocking
-		// This allows us to check for context cancellation
-		file, err := os.OpenFile(ep.path, os.O_RDONLY, 0)
+	for !ep.closed.Load() {
+		// Open pipe for read+write so we don't block waiting for a writer
+		file, err := os.OpenFile(ep.path, os.O_RDWR, 0)
 		if err != nil {
-			if ep.ctx.Err() != nil {
+			if ep.closed.Load() {
 				return
 			}
 			log.Printf("Event pipe open error: %v", err)
+			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 
-		scanner := bufio.NewScanner(file)
-		for scanner.Scan() {
-			select {
-			case <-ep.ctx.Done():
-				file.Close()
+		// Set read deadline to allow periodic checking of closed flag
+		ep.readLoop(file)
+		file.Close()
+	}
+}
+
+func (ep *EventPipe) readLoop(file *os.File) {
+	reader := bufio.NewReader(file)
+
+	for !ep.closed.Load() {
+		// Set a short read deadline so we can check the closed flag periodically
+		file.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			if ep.closed.Load() {
 				return
-			default:
 			}
-
-			line := strings.TrimSpace(scanner.Text())
-			if line == "" || strings.HasPrefix(line, "#") {
+			// Timeout is expected, just continue
+			if os.IsTimeout(err) {
 				continue
 			}
-
-			event, err := parseLine(line)
-			if err != nil {
-				log.Printf("Event pipe parse error: %v", err)
-				continue
-			}
-
-			if ep.handler != nil {
-				ep.handler(event)
-			}
+			// Other error (EOF, etc) - return to reopen
+			return
 		}
 
-		file.Close()
-		// Writer closed the pipe, loop back to wait for next writer
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		event, err := parseLine(line)
+		if err != nil {
+			log.Printf("Event pipe parse error: %v", err)
+			continue
+		}
+
+		if ep.handler != nil {
+			log.Printf("Event pipe dispatching event type=%d", event.Type)
+			ep.handler(event)
+		}
 	}
 }
 
 // Close stops the event pipe listener and removes the pipe.
 func (ep *EventPipe) Close() error {
-	ep.cancel()
+	ep.closed.Store(true)
+	// Give the goroutine time to notice and exit
+	time.Sleep(600 * time.Millisecond)
 	return os.Remove(ep.path)
 }
 
