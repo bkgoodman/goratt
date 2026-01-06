@@ -23,6 +23,9 @@ import (
 	"goratt/indicator"
 	"goratt/mqtt"
 	"goratt/reader"
+	"goratt/rotary"
+	"goratt/video"
+	"goratt/video/screen"
 )
 
 var myBuild string
@@ -34,6 +37,8 @@ type App struct {
 	reader    reader.TagReader
 	door      door.DoorOpener
 	indicator indicator.Indicator
+	display   *video.Display
+	rotary    *rotary.Rotary
 	acl       *ACLManager
 	ctx       context.Context
 	cancel    context.CancelFunc
@@ -79,12 +84,37 @@ func main() {
 		cancel: cancel,
 	}
 
-	// Initialize indicator
+	// Initialize indicator (LEDs, neopixels)
 	app.indicator, err = indicator.New(cfg.Indicator)
 	if err != nil {
 		log.Fatalf("Init indicator: %v", err)
 	}
 	app.indicator.ConnectionLost() // Start with connection lost state
+
+	// Initialize display if enabled
+	if cfg.VideoEnabled {
+		if !video.ScreenSupported() {
+			log.Fatalf("Video enabled but screen support not compiled in")
+		}
+		app.display, err = video.New()
+		if err != nil {
+			log.Fatalf("Init display: %v", err)
+		}
+		app.display.ConnectionLost()
+	}
+
+	// Initialize rotary encoder if configured
+	app.rotary, err = rotary.New(cfg.Rotary, rotary.Handlers{
+		OnTurn:  app.SendRotaryEvent,
+		OnPress: app.SendRotaryPressEvent,
+	})
+	if err != nil {
+		log.Fatalf("Init rotary: %v", err)
+	}
+	if app.rotary != nil {
+		log.Printf("Rotary encoder initialized (CLK=%d, DT=%d, BTN=%d)",
+			cfg.Rotary.CLKPin, cfg.Rotary.DTPin, cfg.Rotary.ButtonPin)
+	}
 
 	// Initialize door opener
 	app.door, err = door.New(cfg.Door)
@@ -152,6 +182,13 @@ func main() {
 	app.door.Release()
 	app.indicator.Shutdown()
 	app.indicator.Release()
+	if app.display != nil {
+		app.display.Shutdown()
+		app.display.Release()
+	}
+	if app.rotary != nil {
+		app.rotary.Release()
+	}
 
 	fmt.Println("Shutdown complete")
 }
@@ -169,10 +206,16 @@ func (app *App) onMQTTConnect() {
 	}
 
 	app.indicator.Idle()
+	if app.display != nil {
+		app.display.Idle()
+	}
 }
 
 func (app *App) onMQTTDisconnect() {
 	app.indicator.ConnectionLost()
+	if app.display != nil {
+		app.display.ConnectionLost()
+	}
 }
 
 func (app *App) onMQTTMessage(topic string, payload []byte) {
@@ -257,7 +300,35 @@ func (app *App) tagListener() {
 func (app *App) handleTag(tagID uint64) {
 	record, found := app.acl.Lookup(tagID)
 
-	// Create AccessInfo for indicator display
+	// Build event with ACL lookup result
+	evt := screen.Event{
+		TagID: tagID,
+		Found: found,
+	}
+	if found {
+		evt.Member = record.Member
+		evt.Nickname = record.Nickname
+		evt.Warning = record.Warning
+		evt.Allowed = record.Allowed
+	}
+
+	// Determine if authorized or denied
+	authorized := found && record.Allowed
+
+	if authorized {
+		evt.Type = screen.EventAuthorized
+	} else {
+		evt.Type = screen.EventDenied
+	}
+
+	// Send event to current screen - if handled, skip default processing
+	if app.display != nil {
+		if app.display.SendEvent(evt) {
+			return
+		}
+	}
+
+	// Default handling (access control)
 	var info *indicator.AccessInfo
 	if found {
 		info = &indicator.AccessInfo{
@@ -268,34 +339,47 @@ func (app *App) handleTag(tagID uint64) {
 		}
 	}
 
-	if !found {
-		fmt.Printf("Tag %d not found in ACL\n", tagID)
-		app.indicator.Denied(nil)
+	if !authorized {
+		if !found {
+			fmt.Printf("Tag %d not found in ACL\n", tagID)
+		} else {
+			fmt.Printf("Tag %d: member=%s denied\n", tagID, record.Member)
+		}
+		app.indicator.Denied(info)
+		if app.display != nil {
+			warning := "Unknown Tag"
+			if found {
+				warning = record.Warning
+			}
+			app.display.Denied(evt.Member, evt.Nickname, warning)
+		}
 		time.Sleep(3 * time.Second)
 		app.indicator.Idle()
+		if app.display != nil {
+			app.display.Idle()
+		}
 		return
 	}
 
-	fmt.Printf("Tag %d: member=%s allowed=%v\n", tagID, record.Member, record.Allowed)
-	app.publishAccess(record.Member, record.Allowed)
-
-	if record.Allowed {
-		app.openDoor(info)
-	} else {
-		app.indicator.Denied(info)
-		time.Sleep(3 * time.Second)
-		app.indicator.Idle()
-	}
+	fmt.Printf("Tag %d: member=%s allowed\n", tagID, record.Member)
+	app.publishAccess(record.Member, true)
+	app.openDoor(info)
 }
 
 func (app *App) openDoor(info *indicator.AccessInfo) {
 	app.indicator.Opening(info)
+	if app.display != nil && info != nil {
+		app.display.Opening(info.Member, info.Nickname, info.Warning)
+	}
 
 	if err := app.door.Open(); err != nil {
 		log.Printf("Door open: %v", err)
 	}
 
 	app.indicator.Granted(info)
+	if app.display != nil && info != nil {
+		app.display.Granted(info.Member, info.Nickname, info.Warning)
+	}
 	time.Sleep(time.Duration(app.cfg.WaitSecs) * time.Second)
 
 	if err := app.door.Close(); err != nil {
@@ -303,6 +387,9 @@ func (app *App) openDoor(info *indicator.AccessInfo) {
 	}
 
 	app.indicator.Idle()
+	if app.display != nil {
+		app.display.Idle()
+	}
 }
 
 func (app *App) publishAccess(member string, allowed bool) {
@@ -328,6 +415,37 @@ func (app *App) pingSender() {
 			app.mqtt.Publish(topic, `{"status":"ok"}`)
 		}
 	}
+}
+
+// SendRotaryEvent sends a rotary turn event to the current screen.
+func (app *App) SendRotaryEvent(delta int) {
+	if app.display == nil {
+		return
+	}
+	app.display.SendEvent(screen.Event{
+		Type:  screen.EventRotaryTurn,
+		Delta: delta,
+	})
+}
+
+// SendRotaryPressEvent sends a rotary button press event to the current screen.
+func (app *App) SendRotaryPressEvent() {
+	if app.display == nil {
+		return
+	}
+	app.display.SendEvent(screen.Event{
+		Type: screen.EventRotaryPress,
+	})
+}
+
+// SendButtonEvent sends a button press event to the current screen.
+func (app *App) SendButtonEvent() {
+	if app.display == nil {
+		return
+	}
+	app.display.SendEvent(screen.Event{
+		Type: screen.EventButton,
+	})
 }
 
 // Signature verification helpers

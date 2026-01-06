@@ -84,14 +84,36 @@ TLS is also **optional**. If no TLS certificates are provided, the connection us
 | `type` | Reader type: `wiegand`, `keyboard`, or `serial` |
 | `device` | Device path (e.g., `/dev/serial0`, `/dev/input/event0`) |
 | `baud` | Baud rate for serial devices (default: 9600 for wiegand, 115200 for serial) |
+| `format` | For keyboard readers: digit format (see below) |
 
 ### Reader Types
 
 | Type | Description |
 | ---- | ----------- |
 | `wiegand` | Serial Wiegand protocol readers. Device usually `/dev/serial0` |
-| `keyboard` | USB keyboard-style readers outputting hex digits. Device is `/dev/input/eventX` |
+| `keyboard` | USB keyboard-style readers outputting digits. Device is `/dev/input/eventX` |
 | `serial` | Custom serial protocol readers at 115200 baud |
+
+### Keyboard Format
+
+The `format` option specifies how keyboard input is parsed. Format is `<digits><base>` where:
+- `<digits>` is the expected number of digits (0 for any length)
+- `<base>` is `h` for hexadecimal or `d` for decimal
+
+| Format | Description |
+| ------ | ----------- |
+| `10h` | 10 hex digits (default) |
+| `10d` | 10 decimal digits |
+| `8h` | 8 hex digits |
+| `8d` | 8 decimal digits |
+
+Example for a reader outputting 10 decimal digits:
+```yaml
+reader:
+  type: keyboard
+  device: /dev/input/event0
+  format: 10d
+```
 
 ## Door Settings (`door:`)
 
@@ -119,11 +141,37 @@ TLS is also **optional**. If no TLS certificates are provided, the connection us
 | `yellow_pin` | GPIO pin for "Opening" LED (usually 25) |
 | `red_pin` | GPIO pin for "Access Denied" LED (usually 23) |
 | `neopixel_pipe` | Path to named pipe for neopixel commands |
-| `video_enabled` | Enable framebuffer video display (requires screen build) |
 
 All indicator settings are optional. Omit or set to null to disable.
 
-**Note:** `video_enabled` requires building with `-tags=screen`. If enabled in config but not compiled in, the program will fail with an error.
+## Video Display Settings
+
+| Parameter | Description |
+| --------- | ----------- |
+| `video_enabled` | Enable framebuffer video display (requires screen build) |
+
+**Note:** `video_enabled` is a top-level config option (not under `indicator:`). Requires building with `-tags=screen`. If enabled in config but not compiled in, the program will fail with an error.
+
+The video display uses a stateful screen system that can handle events like button presses, rotary encoder input, and RFID swipes.
+
+## Rotary Encoder Settings (`rotary:`)
+
+| Parameter | Description |
+| --------- | ----------- |
+| `chip` | GPIO chip name (default: `gpiochip0`) |
+| `clk_pin` | GPIO pin for CLK signal |
+| `dt_pin` | GPIO pin for DT signal |
+| `button_pin` | GPIO pin for button (optional, 0 to disable) |
+
+Example:
+```yaml
+rotary:
+  clk_pin: 17
+  dt_pin: 27
+  button_pin: 22
+```
+
+Rotary encoder events are sent to the current screen's `HandleEvent` method. The rotary encoder is independent of the video display - you can use it without a screen.
 
 # Neopixel Support
 

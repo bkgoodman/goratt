@@ -12,6 +12,9 @@ import (
 	"github.com/d21d3q/framebuffer"
 	"github.com/fogleman/gg"
 	"golang.org/x/image/draw"
+
+	"goratt/video/screen"
+	"goratt/video/screen/screens"
 )
 
 // ScreenSupported returns whether screen support is compiled in.
@@ -19,8 +22,8 @@ func ScreenSupported() bool {
 	return true
 }
 
-// Video implements indicator.Indicator using a framebuffer display.
-type Video struct {
+// Display manages the framebuffer and screen system.
+type Display struct {
 	dc              *gg.Context
 	pixBuffer       []byte
 	backBuffer      []byte
@@ -29,7 +32,20 @@ type Video struct {
 	height          int
 	lineLengthBytes int
 	initialized     bool
+
+	// Screen management
+	manager        *screen.Manager
+	idleScreen     *screens.IdleScreen
+	grantedScreen  *screens.GrantedScreen
+	deniedScreen   *screens.DeniedScreen
+	openingScreen  *screens.OpeningScreen
+	connLostScreen *screens.ConnectionLostScreen
+	shutdownScreen *screens.ShutdownScreen
 }
+
+// Video is kept for backward compatibility during transition.
+// Deprecated: Use Display instead.
+type Video = Display
 
 // New creates a new Video indicator.
 func New() (*Video, error) {
@@ -40,7 +56,7 @@ func New() (*Video, error) {
 	return v, nil
 }
 
-func (v *Video) init() error {
+func (v *Display) init() error {
 	fbLowLevel, err := framebuffer.OpenFrameBuffer("/dev/fb0", os.O_RDWR)
 	if err != nil {
 		return fmt.Errorf("open framebuffer: %w", err)
@@ -72,17 +88,35 @@ func (v *Video) init() error {
 	v.dc = gg.NewContextForRGBA(v.rgbaImage)
 	v.initialized = true
 
+	// Initialize screen manager
+	v.manager = screen.NewManager(v.dc, v.width, v.height, v.update)
+
+	// Create and register screens
+	v.idleScreen = screens.NewIdleScreen()
+	v.grantedScreen = screens.NewGrantedScreen()
+	v.deniedScreen = screens.NewDeniedScreen()
+	v.openingScreen = screens.NewOpeningScreen()
+	v.connLostScreen = screens.NewConnectionLostScreen()
+	v.shutdownScreen = screens.NewShutdownScreen()
+
+	v.manager.Register(screen.ScreenIdle, v.idleScreen)
+	v.manager.Register(screen.ScreenGranted, v.grantedScreen)
+	v.manager.Register(screen.ScreenDenied, v.deniedScreen)
+	v.manager.Register(screen.ScreenOpening, v.openingScreen)
+	v.manager.Register(screen.ScreenConnectionLost, v.connLostScreen)
+	v.manager.Register(screen.ScreenShutdown, v.shutdownScreen)
+
 	v.clear()
 	return nil
 }
 
-func (v *Video) clear() {
+func (v *Display) clear() {
 	for i := range v.pixBuffer {
 		v.pixBuffer[i] = 0
 	}
 }
 
-func (v *Video) update() {
+func (v *Display) update() {
 	if !v.initialized {
 		return
 	}
@@ -102,182 +136,84 @@ func (v *Video) update() {
 	copy(v.pixBuffer, v.backBuffer)
 }
 
-func (v *Video) setFontSize(size int) {
-	fontPath := "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-	if err := v.dc.LoadFontFace(fontPath, float64(size)); err != nil {
-		log.Printf("Video: failed to load font: %v", err)
-	}
-}
-
-func (v *Video) drawCentered(text string, y float64, r, g, b float64) {
-	v.dc.SetRGB(r, g, b)
-	v.dc.DrawStringAnchored(text, float64(v.width/2), y, 0.5, 0.5)
-}
-
-// Idle implements indicator.Indicator.
-func (v *Video) Idle() {
+// Idle switches to the idle screen.
+func (v *Display) Idle() {
 	if !v.initialized {
 		return
 	}
-	v.dc.SetRGB(0, 0.5, 0) // Green background
-	v.dc.DrawRectangle(0, 0, float64(v.width), float64(v.height))
-	v.dc.Fill()
-
-	v.setFontSize(64)
-	v.drawCentered("Ready", float64(v.height/2), 1, 1, 1)
-	v.update()
+	v.manager.SwitchTo(screen.ScreenIdle)
 }
 
-// Granted implements indicator.Indicator.
-func (v *Video) Granted(member, nickname, warning string) {
+// Granted switches to the granted screen with member info.
+func (v *Display) Granted(member, nickname, warning string) {
 	if !v.initialized {
 		return
 	}
-	v.dc.SetRGB(0, 0.7, 0) // Bright green
-	v.dc.DrawRectangle(0, 0, float64(v.width), float64(v.height))
-	v.dc.Fill()
-
-	v.setFontSize(64)
-	y := float64(v.height/2) - 40
-	v.drawCentered("Access Granted", y, 1, 1, 1)
-
-	// Display name (prefer nickname, fall back to member)
-	v.setFontSize(48)
-	displayName := nickname
-	if displayName == "" {
-		displayName = member
-	}
-	if displayName != "" {
-		v.drawCentered(displayName, y+70, 1, 1, 1)
-	}
-
-	// Display warning if present
-	if warning != "" {
-		v.setFontSize(32)
-		v.dc.SetRGB(1, 1, 0) // Yellow warning text
-		v.dc.DrawStringAnchored(warning, float64(v.width/2), y+130, 0.5, 0.5)
-	}
-
-	v.update()
+	v.grantedScreen.SetInfo(member, nickname, warning)
+	v.manager.SwitchTo(screen.ScreenGranted)
 }
 
-// Denied implements indicator.Indicator.
-func (v *Video) Denied(member, nickname, warning string) {
+// Denied switches to the denied screen with member info.
+func (v *Display) Denied(member, nickname, warning string) {
 	if !v.initialized {
 		return
 	}
-	v.dc.SetRGB(0.7, 0, 0) // Red
-	v.dc.DrawRectangle(0, 0, float64(v.width), float64(v.height))
-	v.dc.Fill()
-
-	v.setFontSize(64)
-	y := float64(v.height/2) - 40
-	v.drawCentered("Access Denied", y, 1, 1, 1)
-
-	// Display name if known
-	displayName := nickname
-	if displayName == "" {
-		displayName = member
-	}
-	if displayName != "" {
-		v.setFontSize(48)
-		v.drawCentered(displayName, y+70, 1, 1, 1)
-	}
-
-	// Display warning/reason if present
-	if warning != "" {
-		v.setFontSize(32)
-		v.dc.SetRGB(1, 1, 0) // Yellow warning text
-		v.dc.DrawStringAnchored(warning, float64(v.width/2), y+130, 0.5, 0.5)
-	}
-
-	v.update()
+	v.deniedScreen.SetInfo(member, nickname, warning)
+	v.manager.SwitchTo(screen.ScreenDenied)
 }
 
-// Opening implements indicator.Indicator.
-func (v *Video) Opening(member, nickname, warning string) {
+// Opening switches to the opening screen with member info.
+func (v *Display) Opening(member, nickname, warning string) {
 	if !v.initialized {
 		return
 	}
-	v.dc.SetRGB(0.7, 0.7, 0) // Yellow
-	v.dc.DrawRectangle(0, 0, float64(v.width), float64(v.height))
-	v.dc.Fill()
-
-	v.setFontSize(64)
-	y := float64(v.height/2) - 40
-	v.drawCentered("Opening...", y, 0, 0, 0)
-
-	// Display name
-	displayName := nickname
-	if displayName == "" {
-		displayName = member
-	}
-	if displayName != "" {
-		v.setFontSize(48)
-		v.drawCentered(displayName, y+70, 0, 0, 0)
-	}
-
-	// Display warning if present
-	if warning != "" {
-		v.setFontSize(32)
-		v.dc.SetRGB(0.7, 0, 0) // Red warning text on yellow background
-		v.dc.DrawStringAnchored(warning, float64(v.width/2), y+130, 0.5, 0.5)
-	}
-
-	v.update()
+	v.openingScreen.SetInfo(member, nickname, warning)
+	v.manager.SwitchTo(screen.ScreenOpening)
 }
 
-// ConnectionLost implements indicator.Indicator.
-func (v *Video) ConnectionLost() {
+// ConnectionLost switches to the connection lost screen.
+func (v *Display) ConnectionLost() {
 	if !v.initialized {
 		return
 	}
-	v.dc.SetRGB(0.5, 0.3, 0) // Orange-ish
-	v.dc.DrawRectangle(0, 0, float64(v.width), float64(v.height))
-	v.dc.Fill()
-
-	v.setFontSize(64)
-	v.drawCentered("Connection Lost", float64(v.height/2), 1, 1, 1)
-	v.update()
+	v.manager.SwitchTo(screen.ScreenConnectionLost)
 }
 
-// Shutdown implements indicator.Indicator.
-func (v *Video) Shutdown() {
+// Shutdown switches to the shutdown screen.
+func (v *Display) Shutdown() {
 	if !v.initialized {
 		return
 	}
-	v.clear()
-	v.update()
+	v.manager.SwitchTo(screen.ScreenShutdown)
 }
 
-// Release implements indicator.Indicator.
-func (v *Video) Release() error {
+// Release releases display resources.
+func (v *Display) Release() error {
 	v.clear()
 	v.initialized = false
 	return nil
 }
 
-// DisplayNumber shows a number on screen (for rotary encoder testing).
-func (v *Video) DisplayNumber(n int64) {
-	if !v.initialized {
-		return
-	}
-	v.dc.SetRGB(0, 0, 0.3) // Dark blue background
-	v.dc.DrawRectangle(0, 0, float64(v.width), float64(v.height))
-	v.dc.Fill()
+// Manager returns the screen manager for direct access.
+func (v *Display) Manager() *screen.Manager {
+	return v.manager
+}
 
-	v.setFontSize(128)
-	v.drawCentered(fmt.Sprintf("%d", n), float64(v.height/2), 1, 1, 1)
-	v.update()
+// SendEvent sends an event to the current screen.
+func (v *Display) SendEvent(event screen.Event) bool {
+	if v.manager == nil {
+		return false
+	}
+	return v.manager.SendEvent(event)
 }
 
 // Width returns the display width.
-func (v *Video) Width() int {
+func (v *Display) Width() int {
 	return v.width
 }
 
 // Height returns the display height.
-func (v *Video) Height() int {
+func (v *Display) Height() int {
 	return v.height
 }
 

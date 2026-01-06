@@ -1,8 +1,9 @@
-//go:build screen
+//go:build linux
 
-package video
+package rotary
 
 import (
+	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -21,18 +22,28 @@ type Rotary struct {
 	onPress func()
 }
 
-// RotaryConfig holds configuration for a rotary encoder.
-type RotaryConfig struct {
-	Chip      string
-	CLKPin    int
-	DTPin     int
-	ButtonPin int
-	OnTurn    func(delta int) // Called with +1 (CW) or -1 (CCW)
-	OnPress   func()          // Called when button pressed
+// Config holds configuration for a rotary encoder.
+type Config struct {
+	Chip      string `yaml:"chip"`
+	CLKPin    int    `yaml:"clk_pin"`
+	DTPin     int    `yaml:"dt_pin"`
+	ButtonPin int    `yaml:"button_pin"`
 }
 
-// NewRotary creates a new rotary encoder handler.
-func NewRotary(cfg RotaryConfig) (*Rotary, error) {
+// Handlers holds callback functions for rotary events.
+type Handlers struct {
+	OnTurn  func(delta int) // Called with +1 (CW) or -1 (CCW)
+	OnPress func()          // Called when button pressed
+}
+
+// New creates a new rotary encoder handler.
+// Returns nil if config has no pins specified (CLKPin and DTPin both 0).
+func New(cfg Config, handlers Handlers) (*Rotary, error) {
+	// If no pins configured, return nil (rotary disabled)
+	if cfg.CLKPin == 0 && cfg.DTPin == 0 {
+		return nil, nil
+	}
+
 	if cfg.Chip == "" {
 		cfg.Chip = "gpiochip0"
 	}
@@ -41,8 +52,8 @@ func NewRotary(cfg RotaryConfig) (*Rotary, error) {
 	debounceButton := 2 * time.Millisecond
 
 	r := &Rotary{
-		onTurn:  cfg.OnTurn,
-		onPress: cfg.OnPress,
+		onTurn:  handlers.OnTurn,
+		onPress: handlers.OnPress,
 	}
 
 	var err error
@@ -68,8 +79,8 @@ func NewRotary(cfg RotaryConfig) (*Rotary, error) {
 		return nil, err
 	}
 
-	// Request button line
-	if cfg.ButtonPin >= 0 {
+	// Request button line if specified
+	if cfg.ButtonPin > 0 {
 		r.btnLine, err = gpiocdev.RequestLine(cfg.Chip, cfg.ButtonPin,
 			gpiocdev.WithPullUp,
 			gpiocdev.WithFallingEdge,
@@ -104,6 +115,7 @@ func (r *Rotary) handleEvent(evt gpiocdev.LineEvent) {
 
 	// Decode direction on CLK rising edge
 	if evt.Offset == r.clkLine.Offset() && evt.Type == gpiocdev.LineEventRisingEdge {
+		fmt.Printf("Rotary %d\n", r.lastDT)
 		if r.lastDT == 0 {
 			atomic.AddInt64(&r.pos, 1)
 			if r.onTurn != nil {
@@ -120,6 +132,7 @@ func (r *Rotary) handleEvent(evt gpiocdev.LineEvent) {
 
 func (r *Rotary) handleButton(evt gpiocdev.LineEvent) {
 	if r.onPress != nil {
+		fmt.Println("Button pressed")
 		r.onPress()
 	}
 }

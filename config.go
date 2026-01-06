@@ -5,6 +5,7 @@ import (
 	"goratt/indicator"
 	"goratt/mqtt"
 	"goratt/reader"
+	"goratt/rotary"
 )
 
 // Config is the main configuration structure for GoRATT.
@@ -21,8 +22,14 @@ type Config struct {
 	// Door opener configuration
 	Door door.Config `yaml:"door"`
 
-	// Indicator configuration
+	// Indicator configuration (LEDs, neopixels)
 	Indicator indicator.Config `yaml:"indicator"`
+
+	// Video display configuration
+	VideoEnabled bool `yaml:"video_enabled"`
+
+	// Rotary encoder configuration
+	Rotary rotary.Config `yaml:"rotary"`
 
 	// General settings
 	ClientID     string `yaml:"client_id"`
