@@ -11,23 +11,84 @@ const (
 	EventDenied                      // ACL lookup failed or user not allowed
 	EventRotaryTurn
 	EventRotaryPress
-	EventButton
+	EventPin // GPIO pin event
 )
 
-// Event represents an input event sent to a screen.
+// RotaryID identifies a specific rotary encoder
+type RotaryID int
+
+const (
+	RotaryMain RotaryID = iota // Main/default rotary encoder
+	RotaryAux                  // Auxiliary rotary encoder
+)
+
+// PinID identifies a specific GPIO pin input
+type PinID int
+
+const (
+	PinButton1   PinID = iota // Primary button
+	PinButton2                // Secondary button
+	PinSensor1                // Sensor input 1
+	PinSensor2                // Sensor input 2
+	PinEstop                  // Emergency stop
+	PinDoor                   // Door sensor
+	PinSafelight              // Safelight switch
+	PinActivity               // Activity switch or Current Sense
+	PinEnable                 // Enable switch (On/Off)
+)
+
+// Event is the base event structure. Type-specific data is in the Data field.
 type Event struct {
 	Type EventType
+	Data any // Type-specific event data (RFIDData, RotaryData, PinData, etc.)
+}
 
-	// For RFID/Authorization events
+// RFIDData contains data for RFID-related events (EventRFID, EventAuthorized, EventDenied).
+type RFIDData struct {
 	TagID    uint64
 	Member   string
 	Nickname string
 	Warning  string
-	Allowed  bool // For EventRFID: ACL allowed flag; for EventAuthorized/Denied: always true/false
+	Allowed  bool // ACL allowed flag
 	Found    bool // Whether tag was found in ACL
+}
 
-	// For rotary events
-	Delta int // +1 for CW, -1 for CCW
+// RotaryData contains data for rotary encoder events.
+type RotaryData struct {
+	ID    RotaryID // Which rotary encoder
+	Delta int      // +1 for CW, -1 for CCW (for turn events)
+}
+
+// PinData contains data for GPIO pin events.
+type PinData struct {
+	ID      PinID // Which pin
+	Pressed bool  // true for press/active, false for release/inactive
+}
+
+// Helper methods to extract typed data from events
+
+// RFID returns the RFIDData from the event, or nil if not an RFID event.
+func (e Event) RFID() *RFIDData {
+	if data, ok := e.Data.(RFIDData); ok {
+		return &data
+	}
+	return nil
+}
+
+// Rotary returns the RotaryData from the event, or nil if not a rotary event.
+func (e Event) Rotary() *RotaryData {
+	if data, ok := e.Data.(RotaryData); ok {
+		return &data
+	}
+	return nil
+}
+
+// Pin returns the PinData from the event, or nil if not a pin event.
+func (e Event) Pin() *PinData {
+	if data, ok := e.Data.(PinData); ok {
+		return &data
+	}
+	return nil
 }
 
 // Screen is the interface that all screens must implement.

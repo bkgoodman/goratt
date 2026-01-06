@@ -173,6 +173,61 @@ rotary:
 
 Rotary encoder events are sent to the current screen's `HandleEvent` method. The rotary encoder is independent of the video display - you can use it without a screen.
 
+## Event Pipe (`event_pipe:`)
+
+The event pipe allows external programs or shell scripts to inject events into the system for testing or integration.
+
+| Parameter | Description |
+| --------- | ----------- |
+| `path` | Path to named pipe (e.g., `/tmp/goratt-events`) |
+
+Example:
+```yaml
+event_pipe:
+  path: /tmp/goratt-events
+```
+
+### Pipe Commands
+
+Commands are sent as plain text lines. The pipe can be opened/closed by writers - the program handles reconnection automatically.
+
+| Command | Description |
+| ------- | ----------- |
+| `rfid <tagid>` | Simulate RFID tag swipe (decimal or hex) |
+| `tag <tagid>` | Alias for `rfid` |
+| `rotary <delta>` | Simulate rotary turn (+1 for CW, -1 for CCW) |
+| `rotary press` | Simulate rotary button press |
+| `pin <name> <0\|1>` | Simulate pin state change (0=released, 1=pressed) |
+
+**Pin Names:** `button1`, `button2`, `sensor1`, `sensor2`, `estop`, `door`, `safelight`, `activity`, `enable`
+
+### Usage Examples
+
+```bash
+# Create pipe (done automatically by program)
+# mkfifo /tmp/goratt-events
+
+# Simulate tag swipe (decimal)
+echo "rfid 1234567890" > /tmp/goratt-events
+
+# Simulate tag swipe (hex)
+echo "tag 0x499602D2" > /tmp/goratt-events
+
+# Simulate rotary turn clockwise
+echo "rotary 1" > /tmp/goratt-events
+
+# Simulate rotary button press
+echo "rotary press" > /tmp/goratt-events
+
+# Simulate button press
+echo "pin button1 1" > /tmp/goratt-events
+
+# Simulate button release
+echo "pin button1 0" > /tmp/goratt-events
+```
+
+Lines starting with `#` are treated as comments and ignored.
+
 # Neopixel Support
 
 Neopixels are supported through an external program. See [RPi Neopixel Tool](http://github.com/bkgoodman/rpi-neopixel-tool.git)

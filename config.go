@@ -2,6 +2,7 @@ package main
 
 import (
 	"goratt/door"
+	"goratt/eventpipe"
 	"goratt/indicator"
 	"goratt/mqtt"
 	"goratt/reader"
@@ -30,6 +31,9 @@ type Config struct {
 
 	// Rotary encoder configuration
 	Rotary rotary.Config `yaml:"rotary"`
+
+	// Event pipe for external event injection
+	EventPipe eventpipe.Config `yaml:"event_pipe"`
 
 	// General settings
 	ClientID     string `yaml:"client_id"`

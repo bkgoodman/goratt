@@ -20,6 +20,7 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"goratt/door"
+	"goratt/eventpipe"
 	"goratt/indicator"
 	"goratt/mqtt"
 	"goratt/reader"
@@ -39,6 +40,7 @@ type App struct {
 	indicator indicator.Indicator
 	display   *video.Display
 	rotary    *rotary.Rotary
+	eventPipe *eventpipe.EventPipe
 	acl       *ACLManager
 	ctx       context.Context
 	cancel    context.CancelFunc
@@ -149,6 +151,12 @@ func main() {
 		select {} // Block forever
 	}
 
+	// Initialize event pipe for external event injection
+	app.eventPipe, err = eventpipe.New(cfg.EventPipe, app.handleExternalEvent)
+	if err != nil {
+		log.Fatalf("Init event pipe: %v", err)
+	}
+
 	// Initialize MQTT
 	app.mqtt, err = mqtt.New(cfg.MQTT, cfg.ClientID, mqtt.Handlers{
 		OnConnect:    app.onMQTTConnect,
@@ -167,6 +175,9 @@ func main() {
 	}()
 	go app.tagListener()
 	go app.pingSender()
+	if app.eventPipe != nil {
+		go app.eventPipe.Start()
+	}
 
 	// Wait for shutdown signal
 	sigCh := make(chan os.Signal, 1)
@@ -188,6 +199,9 @@ func main() {
 	}
 	if app.rotary != nil {
 		app.rotary.Release()
+	}
+	if app.eventPipe != nil {
+		app.eventPipe.Close()
 	}
 
 	fmt.Println("Shutdown complete")
@@ -300,25 +314,26 @@ func (app *App) tagListener() {
 func (app *App) handleTag(tagID uint64) {
 	record, found := app.acl.Lookup(tagID)
 
-	// Build event with ACL lookup result
-	evt := screen.Event{
+	// Build RFID data for event
+	rfidData := screen.RFIDData{
 		TagID: tagID,
 		Found: found,
 	}
 	if found {
-		evt.Member = record.Member
-		evt.Nickname = record.Nickname
-		evt.Warning = record.Warning
-		evt.Allowed = record.Allowed
+		rfidData.Member = record.Member
+		rfidData.Nickname = record.Nickname
+		rfidData.Warning = record.Warning
+		rfidData.Allowed = record.Allowed
 	}
 
 	// Determine if authorized or denied
 	authorized := found && record.Allowed
 
+	var evt screen.Event
 	if authorized {
-		evt.Type = screen.EventAuthorized
+		evt = screen.Event{Type: screen.EventAuthorized, Data: rfidData}
 	} else {
-		evt.Type = screen.EventDenied
+		evt = screen.Event{Type: screen.EventDenied, Data: rfidData}
 	}
 
 	// Send event to current screen - if handled, skip default processing
@@ -351,12 +366,12 @@ func (app *App) handleTag(tagID uint64) {
 			if found {
 				warning = record.Warning
 			}
-			app.display.Denied(evt.Member, evt.Nickname, warning)
-		}
-		time.Sleep(3 * time.Second)
-		app.indicator.Idle()
-		if app.display != nil {
-			app.display.Idle()
+			app.display.Denied(rfidData.Member, rfidData.Nickname, warning)
+			// Screen handles its own timeout via SetTimeout, no blocking sleep needed
+		} else {
+			// No display - use blocking sleep for indicator
+			time.Sleep(3 * time.Second)
+			app.indicator.Idle()
 		}
 		return
 	}
@@ -376,20 +391,21 @@ func (app *App) openDoor(info *indicator.AccessInfo) {
 		log.Printf("Door open: %v", err)
 	}
 
+	// Show granted screen - it will auto-dismiss via its own SetTimeout
 	app.indicator.Granted(info)
 	if app.display != nil && info != nil {
 		app.display.Granted(info.Member, info.Nickname, info.Warning)
 	}
+
+	// Wait for door hold-open duration, then close
 	time.Sleep(time.Duration(app.cfg.WaitSecs) * time.Second)
 
 	if err := app.door.Close(); err != nil {
 		log.Printf("Door close: %v", err)
 	}
 
+	// Indicator goes idle, but display is controlled by screen's own timeout
 	app.indicator.Idle()
-	if app.display != nil {
-		app.display.Idle()
-	}
 }
 
 func (app *App) publishAccess(member string, allowed bool) {
@@ -423,8 +439,8 @@ func (app *App) SendRotaryEvent(delta int) {
 		return
 	}
 	app.display.SendEvent(screen.Event{
-		Type:  screen.EventRotaryTurn,
-		Delta: delta,
+		Type: screen.EventRotaryTurn,
+		Data: screen.RotaryData{ID: screen.RotaryMain, Delta: delta},
 	})
 }
 
@@ -435,17 +451,39 @@ func (app *App) SendRotaryPressEvent() {
 	}
 	app.display.SendEvent(screen.Event{
 		Type: screen.EventRotaryPress,
+		Data: screen.RotaryData{ID: screen.RotaryMain},
 	})
 }
 
-// SendButtonEvent sends a button press event to the current screen.
-func (app *App) SendButtonEvent() {
+// SendPinEvent sends a GPIO pin event to the current screen.
+func (app *App) SendPinEvent(pinID screen.PinID, pressed bool) {
 	if app.display == nil {
 		return
 	}
 	app.display.SendEvent(screen.Event{
-		Type: screen.EventButton,
+		Type: screen.EventPin,
+		Data: screen.PinData{ID: pinID, Pressed: pressed},
 	})
+}
+
+// handleExternalEvent processes events received from the event pipe.
+func (app *App) handleExternalEvent(evt screen.Event) {
+	log.Printf("External event: type=%d", evt.Type)
+
+	switch evt.Type {
+	case screen.EventRFID:
+		// Treat as a tag swipe - run through ACL lookup
+		if rfid := evt.RFID(); rfid != nil {
+			app.handleTag(rfid.TagID)
+		}
+	case screen.EventRotaryTurn, screen.EventRotaryPress, screen.EventPin:
+		// Send directly to display
+		if app.display != nil {
+			app.display.SendEvent(evt)
+		}
+	default:
+		log.Printf("Unknown external event type: %d", evt.Type)
+	}
 }
 
 // Signature verification helpers
