@@ -154,6 +154,25 @@ All indicator settings are optional. Omit or set to null to disable.
 
 The video display uses a stateful screen system that can handle events like button presses, rotary encoder input, and RFID swipes.
 
+## Video Settings (`video:`)
+
+| Parameter | Description |
+| --------- | ----------- |
+| `rotation` | Display rotation in degrees: `0`, `90`, `180`, or `270` |
+
+Example:
+```yaml
+video:
+  rotation: 180
+```
+
+The rotation is applied in software - the offscreen buffer is sized for the rotated dimensions, and pixels are transformed when blitting to the framebuffer. This works independently of any hardware rotation settings.
+
+- **0**: No rotation (default)
+- **90**: 90° clockwise
+- **180**: Upside down
+- **270**: 270° clockwise (90° counter-clockwise)
+
 ## Rotary Encoder Settings (`rotary:`)
 
 | Parameter | Description |

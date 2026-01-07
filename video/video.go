@@ -22,16 +22,34 @@ func ScreenSupported() bool {
 	return true
 }
 
+// Rotation specifies display rotation in degrees.
+type Rotation int
+
+const (
+	Rotation0   Rotation = 0   // No rotation
+	Rotation90  Rotation = 90  // 90 degrees clockwise
+	Rotation180 Rotation = 180 // 180 degrees (upside down)
+	Rotation270 Rotation = 270 // 270 degrees clockwise (90 CCW)
+)
+
+// Config holds video display configuration.
+type Config struct {
+	Rotation int `yaml:"rotation"` // 0, 90, 180, or 270 degrees
+}
+
 // Display manages the framebuffer and screen system.
 type Display struct {
 	dc              *gg.Context
 	pixBuffer       []byte
 	backBuffer      []byte
 	rgbaImage       *image.RGBA
-	width           int
-	height          int
+	width           int // Logical width (after rotation)
+	height          int // Logical height (after rotation)
+	fbWidth         int // Actual framebuffer width
+	fbHeight        int // Actual framebuffer height
 	lineLengthBytes int
 	initialized     bool
+	rotation        Rotation
 
 	// Screen management
 	manager        *screen.Manager
@@ -47,9 +65,12 @@ type Display struct {
 // Deprecated: Use Display instead.
 type Video = Display
 
-// New creates a new Video indicator.
-func New() (*Video, error) {
+// New creates a new Video indicator with optional configuration.
+func New(cfg ...Config) (*Video, error) {
 	v := &Video{}
+	if len(cfg) > 0 {
+		v.rotation = Rotation(cfg[0].Rotation)
+	}
 	if err := v.init(); err != nil {
 		return nil, err
 	}
@@ -76,19 +97,35 @@ func (v *Display) init() error {
 		return fmt.Errorf("get pixel data: %w", err)
 	}
 
-	v.width = int(varInfo.XRes)
-	v.height = int(varInfo.YRes)
+	v.fbWidth = int(varInfo.XRes)
+	v.fbHeight = int(varInfo.YRes)
 	v.lineLengthBytes = int(fixedInfo.LineLength)
-	v.backBuffer = make([]byte, v.height*v.lineLengthBytes)
+	v.backBuffer = make([]byte, v.fbHeight*v.lineLengthBytes)
 
-	log.Printf("Video: framebuffer %dx%d, %d bpp, stride %d bytes",
-		v.width, v.height, varInfo.BitsPerPixel, v.lineLengthBytes)
+	// Validate rotation
+	switch v.rotation {
+	case Rotation0, Rotation180:
+		v.width = v.fbWidth
+		v.height = v.fbHeight
+	case Rotation90, Rotation270:
+		v.width = v.fbHeight
+		v.height = v.fbWidth
+	default:
+		log.Printf("Video: invalid rotation %d, using 0", v.rotation)
+		v.rotation = Rotation0
+		v.width = v.fbWidth
+		v.height = v.fbHeight
+	}
 
+	log.Printf("Video: framebuffer %dx%d, logical %dx%d, rotation %d, %d bpp, stride %d bytes",
+		v.fbWidth, v.fbHeight, v.width, v.height, v.rotation, varInfo.BitsPerPixel, v.lineLengthBytes)
+
+	// Create drawing surface at logical (rotated) dimensions
 	v.rgbaImage = image.NewRGBA(image.Rect(0, 0, v.width, v.height))
 	v.dc = gg.NewContextForRGBA(v.rgbaImage)
 	v.initialized = true
 
-	// Initialize screen manager
+	// Initialize screen manager with logical dimensions
 	v.manager = screen.NewManager(v.dc, v.width, v.height, v.update)
 
 	// Create and register screens
@@ -120,6 +157,7 @@ func (v *Display) update() {
 	if !v.initialized {
 		return
 	}
+	// Iterate over logical pixels and map to framebuffer with rotation
 	for y := 0; y < v.height; y++ {
 		for x := 0; x < v.width; x++ {
 			r, g, b, _ := v.rgbaImage.At(x, y).RGBA()
@@ -127,7 +165,27 @@ func (v *Display) update() {
 			g6 := uint16(g >> (16 - 6))
 			b5 := uint16(b >> (16 - 5))
 			pixel16 := (r5 << 11) | (g6 << 5) | b5
-			fbIdx := (y * v.lineLengthBytes) + (x * 2)
+
+			// Map logical (x, y) to framebuffer (fbX, fbY) based on rotation
+			var fbX, fbY int
+			switch v.rotation {
+			case Rotation0:
+				fbX, fbY = x, y
+			case Rotation90:
+				// 90 CW: (x,y) -> (fbW-1-y, x)
+				fbX = v.fbWidth - 1 - y
+				fbY = x
+			case Rotation180:
+				// 180: (x,y) -> (fbW-1-x, fbH-1-y)
+				fbX = v.fbWidth - 1 - x
+				fbY = v.fbHeight - 1 - y
+			case Rotation270:
+				// 270 CW (90 CCW): (x,y) -> (y, fbH-1-x)
+				fbX = y
+				fbY = v.fbHeight - 1 - x
+			}
+
+			fbIdx := (fbY * v.lineLengthBytes) + (fbX * 2)
 			if fbIdx+1 < len(v.backBuffer) {
 				binary.LittleEndian.PutUint16(v.backBuffer[fbIdx:], pixel16)
 			}

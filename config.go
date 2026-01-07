@@ -7,6 +7,7 @@ import (
 	"goratt/mqtt"
 	"goratt/reader"
 	"goratt/rotary"
+	"goratt/video"
 )
 
 // Config is the main configuration structure for GoRATT.
@@ -27,7 +28,8 @@ type Config struct {
 	Indicator indicator.Config `yaml:"indicator"`
 
 	// Video display configuration
-	VideoEnabled bool `yaml:"video_enabled"`
+	VideoEnabled bool         `yaml:"video_enabled"`
+	Video        video.Config `yaml:"video"`
 
 	// Rotary encoder configuration
 	Rotary rotary.Config `yaml:"rotary"`

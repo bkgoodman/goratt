@@ -9,6 +9,11 @@ func ScreenSupported() bool {
 	return false
 }
 
+// Config holds video display configuration.
+type Config struct {
+	Rotation int `yaml:"rotation"` // 0, 90, 180, or 270 degrees
+}
+
 // Display is a stub when screen support is not compiled in.
 type Display struct{}
 
@@ -16,7 +21,7 @@ type Display struct{}
 type Video = Display
 
 // New returns an error when screen support is not compiled in.
-func New() (*Display, error) {
+func New(cfg ...Config) (*Display, error) {
 	return nil, ErrScreenNotCompiled
 }
 

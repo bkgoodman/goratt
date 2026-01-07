@@ -98,7 +98,7 @@ func main() {
 		if !video.ScreenSupported() {
 			log.Fatalf("Video enabled but screen support not compiled in")
 		}
-		app.display, err = video.New()
+		app.display, err = video.New(cfg.Video)
 		if err != nil {
 			log.Fatalf("Init display: %v", err)
 		}
