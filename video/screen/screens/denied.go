@@ -10,19 +10,15 @@ import (
 
 // DeniedScreen displays the access denied state.
 type DeniedScreen struct {
-	mgr       *screen.Manager
-	member    string
-	nickname  string
-	warning   string
-	timeout   time.Duration
-	onDismiss func() // Called when screen is dismissed (timeout or button)
+	mgr      *screen.Manager
+	member   string
+	nickname string
+	warning  string
 }
 
 // NewDeniedScreen creates a new denied screen.
 func NewDeniedScreen() *DeniedScreen {
-	return &DeniedScreen{
-		timeout: 3 * time.Second, // Default timeout
-	}
+	return &DeniedScreen{}
 }
 
 // SetInfo sets the member info to display.
@@ -32,30 +28,13 @@ func (s *DeniedScreen) SetInfo(member, nickname, warning string) {
 	s.warning = warning
 }
 
-// SetTimeout sets how long to display before auto-dismissing.
-func (s *DeniedScreen) SetTimeout(d time.Duration) {
-	s.timeout = d
-}
-
-// SetOnDismiss sets a callback to be called when the screen is dismissed.
-func (s *DeniedScreen) SetOnDismiss(fn func()) {
-	s.onDismiss = fn
-}
-
 func (s *DeniedScreen) Init(mgr *screen.Manager) {
 	s.mgr = mgr
 
-	// Set timeout to auto-dismiss to idle
-	mgr.SetTimeout(s.timeout, func(scr screen.Screen) {
-		s.dismiss()
+	// Auto-dismiss to idle after 3 seconds
+	mgr.SetTimeout(3*time.Second, func(scr screen.Screen) {
+		mgr.SwitchTo(screen.ScreenIdle)
 	})
-}
-
-func (s *DeniedScreen) dismiss() {
-	if s.onDismiss != nil {
-		s.onDismiss()
-	}
-	s.mgr.SwitchTo(screen.ScreenIdle)
 }
 
 func (s *DeniedScreen) Update() {
@@ -88,7 +67,7 @@ func (s *DeniedScreen) Update() {
 func (s *DeniedScreen) HandleEvent(event screen.Event) bool {
 	// Rotary button press dismisses early
 	if event.Type == screen.EventRotaryPress {
-		s.dismiss()
+		s.mgr.SwitchTo(screen.ScreenIdle)
 		return true
 	}
 	return false
@@ -98,7 +77,6 @@ func (s *DeniedScreen) Exit() {
 	s.member = ""
 	s.nickname = ""
 	s.warning = ""
-	s.onDismiss = nil
 }
 
 func (s *DeniedScreen) Name() string {

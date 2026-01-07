@@ -10,19 +10,15 @@ import (
 
 // GrantedScreen displays the access granted state.
 type GrantedScreen struct {
-	mgr       *screen.Manager
-	member    string
-	nickname  string
-	warning   string
-	timeout   time.Duration
-	onDismiss func() // Called when screen is dismissed (timeout or button)
+	mgr      *screen.Manager
+	member   string
+	nickname string
+	warning  string
 }
 
 // NewGrantedScreen creates a new granted screen.
 func NewGrantedScreen() *GrantedScreen {
-	return &GrantedScreen{
-		timeout: 5 * time.Second, // Default timeout
-	}
+	return &GrantedScreen{}
 }
 
 // SetInfo sets the member info to display.
@@ -32,30 +28,13 @@ func (s *GrantedScreen) SetInfo(member, nickname, warning string) {
 	s.warning = warning
 }
 
-// SetTimeout sets how long to display before auto-dismissing.
-func (s *GrantedScreen) SetTimeout(d time.Duration) {
-	s.timeout = d
-}
-
-// SetOnDismiss sets a callback to be called when the screen is dismissed.
-func (s *GrantedScreen) SetOnDismiss(fn func()) {
-	s.onDismiss = fn
-}
-
 func (s *GrantedScreen) Init(mgr *screen.Manager) {
 	s.mgr = mgr
 
-	// Set timeout to auto-dismiss to idle
-	mgr.SetTimeout(s.timeout, func(scr screen.Screen) {
-		s.dismiss()
+	// Auto-dismiss to idle after 5 seconds
+	mgr.SetTimeout(5*time.Second, func(scr screen.Screen) {
+		mgr.SwitchTo(screen.ScreenIdle)
 	})
-}
-
-func (s *GrantedScreen) dismiss() {
-	if s.onDismiss != nil {
-		s.onDismiss()
-	}
-	s.mgr.SwitchTo(screen.ScreenIdle)
 }
 
 func (s *GrantedScreen) Update() {
@@ -88,7 +67,7 @@ func (s *GrantedScreen) Update() {
 func (s *GrantedScreen) HandleEvent(event screen.Event) bool {
 	// Rotary button press dismisses early
 	if event.Type == screen.EventRotaryPress {
-		s.dismiss()
+		s.mgr.SwitchTo(screen.ScreenIdle)
 		return true
 	}
 	return false
@@ -98,7 +77,6 @@ func (s *GrantedScreen) Exit() {
 	s.member = ""
 	s.nickname = ""
 	s.warning = ""
-	s.onDismiss = nil
 }
 
 func (s *GrantedScreen) Name() string {

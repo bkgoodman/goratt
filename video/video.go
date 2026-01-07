@@ -127,6 +127,7 @@ func (v *Display) init() error {
 
 	// Initialize screen manager with logical dimensions
 	v.manager = screen.NewManager(v.dc, v.width, v.height, v.update)
+	v.manager.SetUpdateRectFn(v.updateRect)
 
 	// Create and register screens
 	v.idleScreen = screens.NewIdleScreen()
@@ -154,35 +155,57 @@ func (v *Display) clear() {
 }
 
 func (v *Display) update() {
+	v.updateRect(0, 0, v.width, v.height)
+}
+
+// updateRect updates only a rectangle of the screen (in logical coordinates).
+func (v *Display) updateRect(x, y, w, h int) {
 	if !v.initialized {
 		return
 	}
-	// Iterate over logical pixels and map to framebuffer with rotation
-	for y := 0; y < v.height; y++ {
-		for x := 0; x < v.width; x++ {
-			r, g, b, _ := v.rgbaImage.At(x, y).RGBA()
+
+	// Clamp to screen bounds
+	if x < 0 {
+		w += x
+		x = 0
+	}
+	if y < 0 {
+		h += y
+		y = 0
+	}
+	if x+w > v.width {
+		w = v.width - x
+	}
+	if y+h > v.height {
+		h = v.height - y
+	}
+	if w <= 0 || h <= 0 {
+		return
+	}
+
+	// Iterate over the rectangle in logical coordinates
+	for ly := y; ly < y+h; ly++ {
+		for lx := x; lx < x+w; lx++ {
+			r, g, b, _ := v.rgbaImage.At(lx, ly).RGBA()
 			r5 := uint16(r >> (16 - 5))
 			g6 := uint16(g >> (16 - 6))
 			b5 := uint16(b >> (16 - 5))
 			pixel16 := (r5 << 11) | (g6 << 5) | b5
 
-			// Map logical (x, y) to framebuffer (fbX, fbY) based on rotation
+			// Map logical (lx, ly) to framebuffer (fbX, fbY) based on rotation
 			var fbX, fbY int
 			switch v.rotation {
 			case Rotation0:
-				fbX, fbY = x, y
+				fbX, fbY = lx, ly
 			case Rotation90:
-				// 90 CW: (x,y) -> (fbW-1-y, x)
-				fbX = v.fbWidth - 1 - y
-				fbY = x
+				fbX = v.fbWidth - 1 - ly
+				fbY = lx
 			case Rotation180:
-				// 180: (x,y) -> (fbW-1-x, fbH-1-y)
-				fbX = v.fbWidth - 1 - x
-				fbY = v.fbHeight - 1 - y
+				fbX = v.fbWidth - 1 - lx
+				fbY = v.fbHeight - 1 - ly
 			case Rotation270:
-				// 270 CW (90 CCW): (x,y) -> (y, fbH-1-x)
-				fbX = y
-				fbY = v.fbHeight - 1 - x
+				fbX = ly
+				fbY = v.fbHeight - 1 - lx
 			}
 
 			fbIdx := (fbY * v.lineLengthBytes) + (fbX * 2)
@@ -191,7 +214,39 @@ func (v *Display) update() {
 			}
 		}
 	}
-	copy(v.pixBuffer, v.backBuffer)
+
+	// Copy only the affected rows in the framebuffer
+	// Calculate the framebuffer bounding box based on rotation
+	var fbMinX, fbMinY, fbMaxX, fbMaxY int
+	switch v.rotation {
+	case Rotation0:
+		fbMinX, fbMinY = x, y
+		fbMaxX, fbMaxY = x+w-1, y+h-1
+	case Rotation90:
+		fbMinX = v.fbWidth - 1 - (y + h - 1)
+		fbMaxX = v.fbWidth - 1 - y
+		fbMinY = x
+		fbMaxY = x + w - 1
+	case Rotation180:
+		fbMinX = v.fbWidth - 1 - (x + w - 1)
+		fbMaxX = v.fbWidth - 1 - x
+		fbMinY = v.fbHeight - 1 - (y + h - 1)
+		fbMaxY = v.fbHeight - 1 - y
+	case Rotation270:
+		fbMinX = y
+		fbMaxX = y + h - 1
+		fbMinY = v.fbHeight - 1 - (x + w - 1)
+		fbMaxY = v.fbHeight - 1 - x
+	}
+
+	// Copy only the affected rows
+	for fbY := fbMinY; fbY <= fbMaxY; fbY++ {
+		srcStart := fbY*v.lineLengthBytes + fbMinX*2
+		srcEnd := fbY*v.lineLengthBytes + (fbMaxX+1)*2
+		if srcStart < len(v.backBuffer) && srcEnd <= len(v.backBuffer) {
+			copy(v.pixBuffer[srcStart:srcEnd], v.backBuffer[srcStart:srcEnd])
+		}
+	}
 }
 
 // Idle switches to the idle screen.

@@ -32,7 +32,8 @@ type Manager struct {
 	screens       map[ScreenID]Screen
 	dc            *gg.Context
 	width, height int
-	updateFn      func() // Called after drawing to flush to framebuffer
+	updateFn      func()               // Called after drawing to flush full framebuffer
+	updateRectFn  func(x, y, w, h int) // Called to flush a rectangle only
 
 	// Timer management
 	nextTimerID TimerID
@@ -49,6 +50,11 @@ func NewManager(dc *gg.Context, width, height int, updateFn func()) *Manager {
 		screens:  make(map[ScreenID]Screen),
 		timers:   make(map[TimerID]*screenTimer),
 	}
+}
+
+// SetUpdateRectFn sets the function for partial screen updates.
+func (m *Manager) SetUpdateRectFn(fn func(x, y, w, h int)) {
+	m.updateRectFn = fn
 }
 
 // Register registers a screen with the manager.
@@ -93,21 +99,24 @@ func (m *Manager) Current() Screen {
 // SendEvent sends an event to the current screen.
 func (m *Manager) SendEvent(event Event) bool {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	current := m.current
+	m.mu.Unlock()
 
-	if m.current == nil {
+	if current == nil {
 		return false
 	}
-	return m.current.HandleEvent(event)
+	// Call HandleEvent outside the lock to allow it to call Update/SwitchTo
+	return current.HandleEvent(event)
 }
 
 // Update forces a redraw of the current screen.
 func (m *Manager) Update() {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	current := m.current
+	m.mu.Unlock()
 
-	if m.current != nil {
-		m.current.Update()
+	if current != nil {
+		current.Update()
 	}
 }
 
@@ -131,6 +140,23 @@ func (m *Manager) Flush() {
 	if m.updateFn != nil {
 		m.updateFn()
 	}
+}
+
+// FlushRect flushes only a rectangle of the screen to the framebuffer.
+// Falls back to full flush if partial update is not supported.
+func (m *Manager) FlushRect(x, y, w, h int) {
+	if m.updateRectFn != nil {
+		m.updateRectFn(x, y, w, h)
+	} else if m.updateFn != nil {
+		m.updateFn()
+	}
+}
+
+// FillRect fills a rectangle with a solid color.
+func (m *Manager) FillRect(x, y, w, h int, r, g, b float64) {
+	m.dc.SetRGB(r, g, b)
+	m.dc.DrawRectangle(float64(x), float64(y), float64(w), float64(h))
+	m.dc.Fill()
 }
 
 // SetFontSize loads a font at the specified size.
