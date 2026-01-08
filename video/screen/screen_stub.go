@@ -13,7 +13,10 @@ const (
 	EventDenied                      // ACL lookup failed or user not allowed
 	EventRotaryTurn
 	EventRotaryPress
-	EventPin // GPIO pin event
+	EventPin              // GPIO pin event
+	EventMQTTConnected    // MQTT broker connected/reconnected
+	EventMQTTDisconnected // MQTT broker disconnected
+	EventMQTTMessage      // MQTT message received
 )
 
 // RotaryID identifies a specific rotary encoder
@@ -85,6 +88,19 @@ func (e Event) Rotary() *RotaryData {
 
 func (e Event) Pin() *PinData {
 	if data, ok := e.Data.(PinData); ok {
+		return &data
+	}
+	return nil
+}
+
+// MQTTData contains data for MQTT events.
+type MQTTData struct {
+	Topic   string
+	Payload []byte
+}
+
+func (e Event) MQTT() *MQTTData {
+	if data, ok := e.Data.(MQTTData); ok {
 		return &data
 	}
 	return nil

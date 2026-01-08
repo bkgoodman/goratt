@@ -222,6 +222,8 @@ func (app *App) onMQTTConnect() {
 	app.indicator.Idle()
 	if app.display != nil {
 		app.display.Idle()
+		// Send MQTT connected event to current screen
+		app.display.SendEvent(screen.Event{Type: screen.EventMQTTConnected})
 	}
 }
 
@@ -229,10 +231,20 @@ func (app *App) onMQTTDisconnect() {
 	app.indicator.ConnectionLost()
 	if app.display != nil {
 		app.display.ConnectionLost()
+		// Send MQTT disconnected event to current screen
+		app.display.SendEvent(screen.Event{Type: screen.EventMQTTDisconnected})
 	}
 }
 
 func (app *App) onMQTTMessage(topic string, payload []byte) {
+	// Send MQTT message event to display
+	if app.display != nil {
+		app.display.SendEvent(screen.Event{
+			Type: screen.EventMQTTMessage,
+			Data: screen.MQTTData{Topic: topic, Payload: payload},
+		})
+	}
+
 	switch topic {
 	case "ratt/control/broadcast/acl/update":
 		fmt.Println("Received ACL update message")
