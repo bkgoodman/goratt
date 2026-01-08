@@ -2,7 +2,10 @@
 
 package screens
 
-import "goratt/video/screen"
+import (
+	"goratt/video/screen"
+	"time"
+)
 
 // OpeningScreen displays the door opening state.
 type OpeningScreen struct {
@@ -10,6 +13,12 @@ type OpeningScreen struct {
 	member   string
 	nickname string
 	warning  string
+
+	// Spinner animation
+	spinnerFrame   int
+	spinnerTimerID screen.TimerID
+	spinnerX       int
+	spinnerY       int
 }
 
 // NewOpeningScreen creates a new opening screen.
@@ -26,6 +35,13 @@ func (s *OpeningScreen) SetInfo(member, nickname, warning string) {
 
 func (s *OpeningScreen) Init(mgr *screen.Manager) {
 	s.mgr = mgr
+
+	// Spinner position - centered below text content
+	s.spinnerX = (mgr.Width() - spinnerSize) / 2
+	s.spinnerY = mgr.Height() - 60 // Near bottom of screen
+
+	// Start spinner animation
+	s.startSpinnerAnimation()
 }
 
 func (s *OpeningScreen) Update() {
@@ -52,7 +68,29 @@ func (s *OpeningScreen) Update() {
 		s.mgr.DC().DrawStringAnchored(s.warning, float64(s.mgr.Width()/2), y+130, 0.5, 0.5)
 	}
 
+	// Draw spinner
+	s.mgr.DC().DrawImage(spinnerFrames[s.spinnerFrame], s.spinnerX, s.spinnerY)
+
 	s.mgr.Flush()
+}
+
+// startSpinnerAnimation starts the 100ms timer for spinner animation
+func (s *OpeningScreen) startSpinnerAnimation() {
+	s.spinnerTimerID = s.mgr.SetTimeout(100*time.Millisecond, func(scr screen.Screen) {
+		// Only continue if timer wasn't cleared (screen still active)
+		if s.spinnerTimerID == 0 {
+			return
+		}
+		s.spinnerFrame = (s.spinnerFrame + 1) % len(spinnerFrames)
+		s.updateSpinner()
+		s.startSpinnerAnimation() // Schedule next frame
+	})
+}
+
+// updateSpinner does a partial update of just the spinner area
+func (s *OpeningScreen) updateSpinner() {
+	s.mgr.DC().DrawImage(spinnerFrames[s.spinnerFrame], s.spinnerX, s.spinnerY)
+	s.mgr.FlushRect(s.spinnerX, s.spinnerY, spinnerSize, spinnerSize)
 }
 
 func (s *OpeningScreen) HandleEvent(event screen.Event) bool {
@@ -60,6 +98,8 @@ func (s *OpeningScreen) HandleEvent(event screen.Event) bool {
 }
 
 func (s *OpeningScreen) Exit() {
+	// Mark spinner as stopped (timer is cleared by manager)
+	s.spinnerTimerID = 0
 	s.member = ""
 	s.nickname = ""
 	s.warning = ""

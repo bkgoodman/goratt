@@ -146,3 +146,5 @@ func (m *Manager) Flush()                                               {}
 func (m *Manager) SetTimeout(d time.Duration, cb TimerCallback) TimerID { return 0 }
 func (m *Manager) ClearTimeout(id TimerID) bool                         { return false }
 func (m *Manager) ClearAllTimeouts()                                    {}
+func (m *Manager) SetMQTTConnected(connected bool)                      {}
+func (m *Manager) IsMQTTConnected() bool                                { return false }

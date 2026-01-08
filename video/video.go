@@ -292,6 +292,15 @@ func (v *Display) ConnectionLost() {
 	v.manager.SwitchTo(screen.ScreenConnectionLost)
 }
 
+// SetMQTTConnected updates the MQTT connection state in the manager.
+// This persists across screen switches and notifies the current screen.
+func (v *Display) SetMQTTConnected(connected bool) {
+	if !v.initialized {
+		return
+	}
+	v.manager.SetMQTTConnected(connected)
+}
+
 // Shutdown switches to the shutdown screen.
 func (v *Display) Shutdown() {
 	if !v.initialized {

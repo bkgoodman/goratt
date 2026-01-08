@@ -26,8 +26,34 @@ type screenTimer struct {
 }
 
 // Manager manages screen state and transitions.
+//
+// # Mutex (mu) Usage
+//
+// The mutex protects: current, screens, timers, nextTimerID, mqttConnected.
+//
+// IMPORTANT: Screen callbacks (Init, Update, Exit, HandleEvent) may be called
+// in two contexts:
+//   - With mutex HELD: Exit() is called from SwitchTo() while holding the lock
+//   - With mutex RELEASED: Init(), Update(), HandleEvent() are called after releasing
+//
+// Rules for Screen implementations:
+//   - NEVER call ClearTimeout() from Exit() - causes deadlock (mutex already held)
+//   - The manager clears all timers for a screen BEFORE calling Exit()
+//   - To stop a recurring timer, just set your timerID field to 0 in Exit()
+//   - Timer callbacks check if timer still exists before running user callback
+//
+// Rules for timer callbacks:
+//   - Callbacks run with mutex RELEASED (safe to call SetTimeout, etc.)
+//   - Check your screen's timerID field to detect if Exit() was called
+//   - Do NOT call Current() to check if screen is active (acquires mutex,
+//     potential deadlock if SwitchTo is waiting)
+//
+// Thread safety:
+//   - SetTimeout, ClearTimeout, SwitchTo, SendEvent are safe to call from any goroutine
+//   - Drawing methods (DC, Flush, FlushRect, etc.) are NOT mutex-protected;
+//     only the current screen should draw, and only from its callbacks
 type Manager struct {
-	mu            sync.Mutex
+	mu            sync.Mutex // Protects current, screens, timers, nextTimerID, mqttConnected
 	current       Screen
 	screens       map[ScreenID]Screen
 	dc            *gg.Context
@@ -38,6 +64,9 @@ type Manager struct {
 	// Timer management
 	nextTimerID TimerID
 	timers      map[TimerID]*screenTimer
+
+	// App-level state that persists across screen switches
+	mqttConnected bool
 }
 
 // NewManager creates a new screen manager.
@@ -178,6 +207,34 @@ func (m *Manager) FillBackground(r, g, b float64) {
 	m.dc.SetRGB(r, g, b)
 	m.dc.DrawRectangle(0, 0, float64(m.width), float64(m.height))
 	m.dc.Fill()
+}
+
+// SetMQTTConnected updates the MQTT connection state.
+// This is called by the app framework and persists across screen switches.
+// If the current screen is showing, it also sends an event to update the display.
+func (m *Manager) SetMQTTConnected(connected bool) {
+	m.mu.Lock()
+	m.mqttConnected = connected
+	current := m.current
+	m.mu.Unlock()
+
+	// Send event to current screen so it can react in real-time
+	if current != nil {
+		var eventType EventType
+		if connected {
+			eventType = EventMQTTConnected
+		} else {
+			eventType = EventMQTTDisconnected
+		}
+		current.HandleEvent(Event{Type: eventType})
+	}
+}
+
+// IsMQTTConnected returns the current MQTT connection state.
+func (m *Manager) IsMQTTConnected() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.mqttConnected
 }
 
 // SetTimeout sets a one-shot timer that calls the callback after the duration.

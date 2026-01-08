@@ -17,9 +17,6 @@ import (
 // startupTime is set once when the package is loaded
 var startupTime = time.Now()
 
-// mqttConnected tracks MQTT connection state globally so it persists across screen switches
-var mqttConnected = false
-
 // Spinner pre-rendered frames (shared across instances)
 var spinnerFrames []*image.RGBA
 var spinnerSize = 40
@@ -83,12 +80,6 @@ type IdleScreen struct {
 	lastIP      string
 	ipTimerID   screen.TimerID
 	ipBarHeight int
-
-	// Spinner animation
-	spinnerFrame   int
-	spinnerTimerID screen.TimerID
-	spinnerX       int
-	spinnerY       int
 }
 
 // NewIdleScreen creates a new idle screen.
@@ -160,34 +151,11 @@ func (s *IdleScreen) Init(mgr *screen.Manager) {
 	s.counterY = mgr.Height()/2 + 10
 	s.counterHeight = 60
 
-	// Spinner position - centered below Ready text
-	s.spinnerX = (mgr.Width() - spinnerSize) / 2
-	s.spinnerY = mgr.Height()/2 + 20
-
 	// Start IP address refresh timer if within startup window
 	if shouldShowIP() {
 		s.lastIP = getIPAddress()
 		s.startIPRefresh()
 	}
-
-	// Always start spinner animation on idle screen
-	s.startSpinnerAnimation()
-}
-
-// startSpinnerAnimation starts the 100ms timer for spinner animation
-func (s *IdleScreen) startSpinnerAnimation() {
-	s.spinnerTimerID = s.mgr.SetTimeout(100*time.Millisecond, func(scr screen.Screen) {
-		s.spinnerFrame = (s.spinnerFrame + 1) % len(spinnerFrames)
-		s.updateSpinner()
-		s.startSpinnerAnimation() // Schedule next frame
-	})
-}
-
-// updateSpinner does a partial update of just the spinner area
-func (s *IdleScreen) updateSpinner() {
-	// Draw spinner frame directly to the drawing context
-	s.mgr.DC().DrawImage(spinnerFrames[s.spinnerFrame], s.spinnerX, s.spinnerY)
-	s.mgr.FlushRect(s.spinnerX, s.spinnerY, spinnerSize, spinnerSize)
 }
 
 // startIPRefresh sets up a timer to periodically refresh the IP address display
@@ -255,9 +223,6 @@ func (s *IdleScreen) Update() {
 	// Draw MQTT disconnected indicator if not connected
 	s.drawMQTTIndicator()
 
-	// Draw spinner
-	s.mgr.DC().DrawImage(spinnerFrames[s.spinnerFrame], s.spinnerX, s.spinnerY)
-
 	// Draw IP bar if within startup window
 	s.drawIPBar()
 
@@ -266,7 +231,7 @@ func (s *IdleScreen) Update() {
 
 // drawMQTTIndicator draws a red "NO MQTT" indicator at bottom if disconnected
 func (s *IdleScreen) drawMQTTIndicator() {
-	if mqttConnected {
+	if s.mgr.IsMQTTConnected() {
 		return
 	}
 
@@ -318,11 +283,9 @@ func (s *IdleScreen) HandleEvent(event screen.Event) bool {
 			return true
 		}
 	case screen.EventMQTTConnected:
-		mqttConnected = true
 		s.updateMQTTIndicator()
 		return true
 	case screen.EventMQTTDisconnected:
-		mqttConnected = false
 		s.updateMQTTIndicator()
 		return true
 	}
@@ -334,7 +297,7 @@ func (s *IdleScreen) updateMQTTIndicator() {
 	barHeight := 24
 	barY := s.mgr.Height() - barHeight
 
-	if mqttConnected {
+	if s.mgr.IsMQTTConnected() {
 		// Clear the bar area with background color
 		s.mgr.FillRect(0, barY, s.mgr.Width(), barHeight, 0, 0.5, 0)
 	} else {
@@ -364,7 +327,6 @@ func (s *IdleScreen) Exit() {
 	s.counter = 0
 	s.timerID = 0
 	s.ipTimerID = 0
-	s.spinnerTimerID = 0
 }
 
 func (s *IdleScreen) Name() string {
