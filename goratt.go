@@ -107,8 +107,9 @@ func main() {
 
 	// Initialize rotary encoder if configured
 	app.rotary, err = rotary.New(cfg.Rotary, rotary.Handlers{
-		OnTurn:  app.SendRotaryEvent,
-		OnPress: app.SendRotaryPressEvent,
+		OnTurn:      app.SendRotaryEvent,
+		OnPress:     app.SendRotaryPressEvent,
+		OnLongPress: app.SendRotaryLongPressEvent,
 	})
 	if err != nil {
 		log.Fatalf("Init rotary: %v", err)
@@ -387,8 +388,18 @@ func (app *App) handleTag(tagID uint64) {
 	}
 
 	fmt.Printf("Tag %d: member=%s allowed\n", tagID, record.Member)
-	app.publishAccess(record.Member, true)
-	app.openDoor(info)
+
+	// Start vending session instead of opening door
+	if app.display != nil && info != nil {
+		// Set vending session with member info and default amount
+		app.display.Manager().SetVendingSession(info.Member, info.Nickname, 1.00)
+		// Switch to select amount screen
+		app.display.Manager().SwitchTo(screen.ScreenSelectAmount)
+	} else {
+		// No display - fall back to old door behavior
+		app.publishAccess(record.Member, true)
+		app.openDoor(info)
+	}
 }
 
 func (app *App) openDoor(info *indicator.AccessInfo) {
@@ -461,6 +472,17 @@ func (app *App) SendRotaryPressEvent() {
 	}
 	app.display.SendEvent(screen.Event{
 		Type: screen.EventRotaryPress,
+		Data: screen.RotaryData{ID: screen.RotaryMain},
+	})
+}
+
+// SendRotaryLongPressEvent sends a rotary button long-press event to the current screen.
+func (app *App) SendRotaryLongPressEvent() {
+	if app.display == nil {
+		return
+	}
+	app.display.SendEvent(screen.Event{
+		Type: screen.EventRotaryLongPress,
 		Data: screen.RotaryData{ID: screen.RotaryMain},
 	})
 }

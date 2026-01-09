@@ -13,6 +13,7 @@ const (
 	EventDenied                      // ACL lookup failed or user not allowed
 	EventRotaryTurn
 	EventRotaryPress
+	EventRotaryLongPress  // Rotary button held for >1s
 	EventPin              // GPIO pin event
 	EventMQTTConnected    // MQTT broker connected/reconnected
 	EventMQTTDisconnected // MQTT broker disconnected
@@ -125,6 +126,9 @@ const (
 	ScreenOpening
 	ScreenConnectionLost
 	ScreenShutdown
+	ScreenSelectAmount
+	ScreenConfirm
+	ScreenAborted
 )
 
 // TimerID uniquely identifies a timer.
@@ -136,15 +140,18 @@ type TimerCallback func(screen Screen)
 // Manager is a stub when screen support is not compiled in.
 type Manager struct{}
 
-func NewManager() *Manager                                              { return nil }
-func (m *Manager) Register(id ScreenID, s Screen)                       {}
-func (m *Manager) SwitchTo(id ScreenID)                                 {}
-func (m *Manager) Current() Screen                                      { return nil }
-func (m *Manager) SendEvent(event Event) bool                           { return false }
-func (m *Manager) Update()                                              {}
-func (m *Manager) Flush()                                               {}
-func (m *Manager) SetTimeout(d time.Duration, cb TimerCallback) TimerID { return 0 }
-func (m *Manager) ClearTimeout(id TimerID) bool                         { return false }
-func (m *Manager) ClearAllTimeouts()                                    {}
-func (m *Manager) SetMQTTConnected(connected bool)                      {}
-func (m *Manager) IsMQTTConnected() bool                                { return false }
+func NewManager() *Manager                                                   { return nil }
+func (m *Manager) Register(id ScreenID, s Screen)                            {}
+func (m *Manager) SwitchTo(id ScreenID)                                      {}
+func (m *Manager) Current() Screen                                           { return nil }
+func (m *Manager) SendEvent(event Event) bool                                { return false }
+func (m *Manager) Update()                                                   {}
+func (m *Manager) Flush()                                                    {}
+func (m *Manager) SetTimeout(d time.Duration, cb TimerCallback) TimerID      { return 0 }
+func (m *Manager) ClearTimeout(id TimerID) bool                              { return false }
+func (m *Manager) ClearAllTimeouts()                                         {}
+func (m *Manager) SetMQTTConnected(connected bool)                           {}
+func (m *Manager) IsMQTTConnected() bool                                     { return false }
+func (m *Manager) SetVendingSession(member, nickname string, amount float64) {}
+func (m *Manager) GetVendingSession() (string, string, float64)              { return "", "", 0 }
+func (m *Manager) ClearVendingSession()                                      {}

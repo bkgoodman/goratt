@@ -11,6 +11,7 @@ const (
 	EventDenied                      // ACL lookup failed or user not allowed
 	EventRotaryTurn
 	EventRotaryPress
+	EventRotaryLongPress  // Rotary button held for >1s
 	EventPin              // GPIO pin event
 	EventMQTTConnected    // MQTT broker connected/reconnected
 	EventMQTTDisconnected // MQTT broker disconnected
@@ -140,4 +141,7 @@ const (
 	ScreenOpening
 	ScreenConnectionLost
 	ScreenShutdown
+	ScreenSelectAmount
+	ScreenConfirm
+	ScreenAborted
 )

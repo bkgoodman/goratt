@@ -52,13 +52,16 @@ type Display struct {
 	rotation        Rotation
 
 	// Screen management
-	manager        *screen.Manager
-	idleScreen     *screens.IdleScreen
-	grantedScreen  *screens.GrantedScreen
-	deniedScreen   *screens.DeniedScreen
-	openingScreen  *screens.OpeningScreen
-	connLostScreen *screens.ConnectionLostScreen
-	shutdownScreen *screens.ShutdownScreen
+	manager            *screen.Manager
+	idleScreen         *screens.IdleScreen
+	grantedScreen      *screens.GrantedScreen
+	deniedScreen       *screens.DeniedScreen
+	openingScreen      *screens.OpeningScreen
+	connLostScreen     *screens.ConnectionLostScreen
+	shutdownScreen     *screens.ShutdownScreen
+	selectAmountScreen *screens.SelectAmountScreen
+	confirmScreen      *screens.ConfirmScreen
+	abortedScreen      *screens.AbortedScreen
 }
 
 // Video is kept for backward compatibility during transition.
@@ -136,6 +139,9 @@ func (v *Display) init() error {
 	v.openingScreen = screens.NewOpeningScreen()
 	v.connLostScreen = screens.NewConnectionLostScreen()
 	v.shutdownScreen = screens.NewShutdownScreen()
+	v.selectAmountScreen = screens.NewSelectAmountScreen()
+	v.confirmScreen = screens.NewConfirmScreen()
+	v.abortedScreen = screens.NewAbortedScreen()
 
 	v.manager.Register(screen.ScreenIdle, v.idleScreen)
 	v.manager.Register(screen.ScreenGranted, v.grantedScreen)
@@ -143,6 +149,9 @@ func (v *Display) init() error {
 	v.manager.Register(screen.ScreenOpening, v.openingScreen)
 	v.manager.Register(screen.ScreenConnectionLost, v.connLostScreen)
 	v.manager.Register(screen.ScreenShutdown, v.shutdownScreen)
+	v.manager.Register(screen.ScreenSelectAmount, v.selectAmountScreen)
+	v.manager.Register(screen.ScreenConfirm, v.confirmScreen)
+	v.manager.Register(screen.ScreenAborted, v.abortedScreen)
 
 	v.clear()
 	return nil

@@ -19,8 +19,9 @@ type Config struct {
 
 // Handlers holds callback functions for rotary events.
 type Handlers struct {
-	OnTurn  func(delta int)
-	OnPress func()
+	OnTurn      func(delta int)
+	OnPress     func()
+	OnLongPress func()
 }
 
 // New returns an error on non-linux platforms.

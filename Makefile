@@ -30,7 +30,9 @@ goratt_arm64_screen:
 
 # Build and deploy to neopi
 run: goratt_arm64_screen
+	ssh bkg@neopi ./beforecopy.sh
 	scp goratt_arm64_screen bkg@neopi:
+	#ssh bkg@neopi ./aftercopy.sh
 
 clean:
 	rm -f goratt goratt_screen goratt_arm goratt_arm_screen goratt_arm64 goratt_arm64_screen

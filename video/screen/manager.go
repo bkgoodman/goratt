@@ -67,6 +67,11 @@ type Manager struct {
 
 	// App-level state that persists across screen switches
 	mqttConnected bool
+
+	// Vending session state
+	vendingMember   string
+	vendingNickname string
+	vendingAmount   float64 // Selected amount in dollars
 }
 
 // NewManager creates a new screen manager.
@@ -235,6 +240,31 @@ func (m *Manager) IsMQTTConnected() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.mqttConnected
+}
+
+// SetVendingSession sets the current vending session info.
+func (m *Manager) SetVendingSession(member, nickname string, amount float64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.vendingMember = member
+	m.vendingNickname = nickname
+	m.vendingAmount = amount
+}
+
+// GetVendingSession returns the current vending session info.
+func (m *Manager) GetVendingSession() (member, nickname string, amount float64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.vendingMember, m.vendingNickname, m.vendingAmount
+}
+
+// ClearVendingSession clears the vending session state.
+func (m *Manager) ClearVendingSession() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.vendingMember = ""
+	m.vendingNickname = ""
+	m.vendingAmount = 0
 }
 
 // SetTimeout sets a one-shot timer that calls the callback after the duration.
