@@ -69,9 +69,11 @@ type Manager struct {
 	mqttConnected bool
 
 	// Vending session state
-	vendingMember   string
-	vendingNickname string
-	vendingAmount   float64 // Selected amount in dollars
+	vendingMember    string
+	vendingNickname  string
+	vendingAmount    float64 // Selected purchase amount in dollars
+	vendingBalance   float64 // Current account balance
+	vendingAddAmount float64 // Amount to add to account
 }
 
 // NewManager creates a new screen manager.
@@ -120,7 +122,15 @@ func (m *Manager) SwitchTo(id ScreenID) {
 
 	// Call Init and Update outside the lock to allow SetTimeout to work
 	screen.Init(m)
-	screen.Update()
+
+	// Check if we're still the current screen after Init (Init might have switched)
+	m.mu.Lock()
+	stillCurrent := (m.current == screen)
+	m.mu.Unlock()
+
+	if stillCurrent {
+		screen.Update()
+	}
 }
 
 // Current returns the current screen, or nil if none.
@@ -249,6 +259,8 @@ func (m *Manager) SetVendingSession(member, nickname string, amount float64) {
 	m.vendingMember = member
 	m.vendingNickname = nickname
 	m.vendingAmount = amount
+	m.vendingBalance = 1.00 // Mock balance for testing
+	m.vendingAddAmount = 0
 }
 
 // GetVendingSession returns the current vending session info.
@@ -258,6 +270,27 @@ func (m *Manager) GetVendingSession() (member, nickname string, amount float64) 
 	return m.vendingMember, m.vendingNickname, m.vendingAmount
 }
 
+// GetVendingBalance returns the current account balance.
+func (m *Manager) GetVendingBalance() float64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.vendingBalance
+}
+
+// SetVendingAddAmount sets the amount to add to account.
+func (m *Manager) SetVendingAddAmount(addAmount float64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.vendingAddAmount = addAmount
+}
+
+// GetVendingAddAmount returns the amount to add to account.
+func (m *Manager) GetVendingAddAmount() float64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.vendingAddAmount
+}
+
 // ClearVendingSession clears the vending session state.
 func (m *Manager) ClearVendingSession() {
 	m.mu.Lock()
@@ -265,6 +298,8 @@ func (m *Manager) ClearVendingSession() {
 	m.vendingMember = ""
 	m.vendingNickname = ""
 	m.vendingAmount = 0
+	m.vendingBalance = 0
+	m.vendingAddAmount = 0
 }
 
 // SetTimeout sets a one-shot timer that calls the callback after the duration.

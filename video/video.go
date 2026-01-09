@@ -52,16 +52,20 @@ type Display struct {
 	rotation        Rotation
 
 	// Screen management
-	manager            *screen.Manager
-	idleScreen         *screens.IdleScreen
-	grantedScreen      *screens.GrantedScreen
-	deniedScreen       *screens.DeniedScreen
-	openingScreen      *screens.OpeningScreen
-	connLostScreen     *screens.ConnectionLostScreen
-	shutdownScreen     *screens.ShutdownScreen
-	selectAmountScreen *screens.SelectAmountScreen
-	confirmScreen      *screens.ConfirmScreen
-	abortedScreen      *screens.AbortedScreen
+	manager                 *screen.Manager
+	idleScreen              *screens.IdleScreen
+	grantedScreen           *screens.GrantedScreen
+	deniedScreen            *screens.DeniedScreen
+	openingScreen           *screens.OpeningScreen
+	connLostScreen          *screens.ConnectionLostScreen
+	shutdownScreen          *screens.ShutdownScreen
+	selectAmountScreen      *screens.SelectAmountScreen
+	confirmScreen           *screens.ConfirmScreen
+	abortedScreen           *screens.AbortedScreen
+	insufficientFundsScreen *screens.InsufficientFundsScreen
+	processingScreen        *screens.ProcessingScreen
+	successScreen           *screens.SuccessScreen
+	paymentFailedScreen     *screens.PaymentFailedScreen
 }
 
 // Video is kept for backward compatibility during transition.
@@ -142,6 +146,10 @@ func (v *Display) init() error {
 	v.selectAmountScreen = screens.NewSelectAmountScreen()
 	v.confirmScreen = screens.NewConfirmScreen()
 	v.abortedScreen = screens.NewAbortedScreen()
+	v.insufficientFundsScreen = screens.NewInsufficientFundsScreen()
+	v.processingScreen = screens.NewProcessingScreen()
+	v.successScreen = screens.NewSuccessScreen()
+	v.paymentFailedScreen = screens.NewPaymentFailedScreen()
 
 	v.manager.Register(screen.ScreenIdle, v.idleScreen)
 	v.manager.Register(screen.ScreenGranted, v.grantedScreen)
@@ -152,6 +160,10 @@ func (v *Display) init() error {
 	v.manager.Register(screen.ScreenSelectAmount, v.selectAmountScreen)
 	v.manager.Register(screen.ScreenConfirm, v.confirmScreen)
 	v.manager.Register(screen.ScreenAborted, v.abortedScreen)
+	v.manager.Register(screen.ScreenInsufficientFunds, v.insufficientFundsScreen)
+	v.manager.Register(screen.ScreenProcessing, v.processingScreen)
+	v.manager.Register(screen.ScreenSuccess, v.successScreen)
+	v.manager.Register(screen.ScreenPaymentFailed, v.paymentFailedScreen)
 
 	v.clear()
 	return nil

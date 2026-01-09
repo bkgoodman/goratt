@@ -144,4 +144,8 @@ const (
 	ScreenSelectAmount
 	ScreenConfirm
 	ScreenAborted
+	ScreenInsufficientFunds
+	ScreenProcessing
+	ScreenSuccess
+	ScreenPaymentFailed
 )

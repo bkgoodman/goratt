@@ -211,13 +211,19 @@ func (s *IdleScreen) drawIPBar() {
 
 func (s *IdleScreen) Update() {
 	s.mgr.FillBackground(0, 0.5, 0) // Green background
-	s.mgr.SetFontSize(64)
-	s.mgr.DrawCentered("Ready", float64(s.mgr.Height()/2)-30, 1, 1, 1)
+
+	// Title
+	s.mgr.SetFontSize(56)
+	s.mgr.DrawCentered("Pay-by-RATT", float64(s.mgr.Height()/2)-40, 1, 1, 1)
+
+	// Instruction
+	s.mgr.SetFontSize(24)
+	s.mgr.DrawCentered("Swipe key fob to begin", float64(s.mgr.Height()/2)+10, 0.9, 0.9, 0.9)
 
 	// Show debug counter if active
 	if s.showCounter {
 		s.mgr.SetFontSize(48)
-		s.mgr.DrawCentered(fmt.Sprintf("%d", s.counter), float64(s.mgr.Height()/2)+40, 1, 1, 0)
+		s.mgr.DrawCentered(fmt.Sprintf("%d", s.counter), float64(s.mgr.Height()/2)+60, 1, 1, 0)
 	}
 
 	// Draw MQTT disconnected indicator if not connected

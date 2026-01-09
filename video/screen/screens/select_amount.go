@@ -13,6 +13,7 @@ import (
 type SelectAmountScreen struct {
 	mgr           *screen.Manager
 	amount        float64
+	balance       float64
 	timeoutID     screen.TimerID
 	member        string
 	nickname      string
@@ -49,6 +50,7 @@ func (s *SelectAmountScreen) Init(mgr *screen.Manager) {
 
 	// Get member info from vending session
 	s.member, s.nickname, s.amount = mgr.GetVendingSession()
+	s.balance = mgr.GetVendingBalance()
 
 	// Default to $1.00 if not set
 	if s.amount == 0 {
@@ -83,7 +85,7 @@ func (s *SelectAmountScreen) Update() {
 
 	// Title
 	s.mgr.SetFontSize(48)
-	s.mgr.DrawCentered("Select Amount", float64(s.mgr.Height()/2)-80, 1, 1, 1)
+	s.mgr.DrawCentered("Select Amount", float64(s.mgr.Height()/2)-90, 1, 1, 1)
 
 	// Display member name
 	displayName := s.nickname
@@ -91,9 +93,13 @@ func (s *SelectAmountScreen) Update() {
 		displayName = s.member
 	}
 	if displayName != "" {
-		s.mgr.SetFontSize(32)
-		s.mgr.DrawCentered(displayName, float64(s.mgr.Height()/2)-30, 0.9, 0.9, 0.9)
+		s.mgr.SetFontSize(28)
+		s.mgr.DrawCentered(displayName, float64(s.mgr.Height()/2)-55, 0.9, 0.9, 0.9)
 	}
+
+	// Display current balance
+	s.mgr.SetFontSize(20)
+	s.mgr.DrawCentered(fmt.Sprintf("Balance: $%.2f", s.balance), float64(s.mgr.Height()/2)-25, 0.8, 0.8, 0.8)
 
 	// Display amount (large)
 	s.mgr.SetFontSize(72)
