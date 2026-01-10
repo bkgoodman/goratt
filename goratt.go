@@ -79,6 +79,16 @@ func main() {
 		cancel: cancel,
 	}
 
+	// Initialize MQTT
+	app.mqtt, err = mqtt.New(cfg.MQTT, cfg.ClientID, mqtt.Handlers{
+		OnConnect:    app.onMQTTConnect,
+		OnDisconnect: app.onMQTTDisconnect,
+		OnMessage:    app.onMQTTMessage,
+	})
+	if err != nil {
+		log.Fatalf("Init MQTT: %v", err)
+	}
+
 	// Initialize indicator
 	app.indicator, err = indicator.New(cfg.Indicator)
 	if err != nil {
@@ -118,17 +128,6 @@ func main() {
 		app.openDoor(&indicator.AccessInfo{Member: "holdopen"})
 		select {} // Block forever
 	}
-
-	// Initialize MQTT
-	app.mqtt, err = mqtt.New(cfg.MQTT, cfg.ClientID, mqtt.Handlers{
-		OnConnect:    app.onMQTTConnect,
-		OnDisconnect: app.onMQTTDisconnect,
-		OnMessage:    app.onMQTTMessage,
-	})
-	if err != nil {
-		log.Fatalf("Init MQTT: %v", err)
-	}
-
 	// Start background goroutines
 	go func() {
 		if err := app.mqtt.Connect(); err != nil {

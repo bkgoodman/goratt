@@ -37,12 +37,15 @@ func (k *Keyboard) Read(ctx context.Context) (uint64, error) {
 	for {
 		select {
 		case <-ctx.Done():
+      fmt.Println("Keyboard done")
 			return 0, ctx.Err()
 		case event := <-ch:
+      fmt.Println("Keyboard chan")
 			if event == nil {
 				return 0, fmt.Errorf("keyboard device closed")
 			}
 
+      fmt.Printf("Keyboard got event %v\n",event)
 			switch event.Type.(type) {
 			case evdev.KeyType:
 				if event.Value != 1 {

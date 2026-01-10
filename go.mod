@@ -1,6 +1,6 @@
 module goratt
 
-go 1.24.0
+go 1.23
 
 require (
 	github.com/d21d3q/framebuffer v0.0.0-20240523132934-e5c64e36408d
