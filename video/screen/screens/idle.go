@@ -77,9 +77,12 @@ type IdleScreen struct {
 	counterHeight int
 
 	// IP address display
-	lastIP      string
-	ipTimerID   screen.TimerID
-	ipBarHeight int
+	lastIP        string
+	ipTimerID     screen.TimerID
+	ipHideTimerID screen.TimerID // Timer to auto-hide forced IP display
+	ipBarHeight   int
+	forceShowIP   bool // Force IP display even after startup window
+	forceHideIP   bool // Force IP to hide even during startup window
 }
 
 // NewIdleScreen creates a new idle screen.
@@ -138,6 +141,16 @@ func shouldShowIP() bool {
 	return time.Since(startupTime) < 2*time.Minute
 }
 
+// shouldShowIPForScreen returns true if IP should be shown for this screen instance
+func (s *IdleScreen) shouldShowIPForScreen() bool {
+	// During startup window, respect the forceHide flag if set
+	if shouldShowIP() && !s.forceHideIP {
+		return true
+	}
+	// After startup or if manually forced
+	return s.forceShowIP
+}
+
 func (s *IdleScreen) Init(mgr *screen.Manager) {
 	s.mgr = mgr
 	s.counter = 0
@@ -152,7 +165,7 @@ func (s *IdleScreen) Init(mgr *screen.Manager) {
 	s.counterHeight = 60
 
 	// Start IP address refresh timer if within startup window
-	if shouldShowIP() {
+	if s.shouldShowIPForScreen() {
 		s.lastIP = getIPAddress()
 		s.startIPRefresh()
 	}
@@ -160,16 +173,16 @@ func (s *IdleScreen) Init(mgr *screen.Manager) {
 
 // startIPRefresh sets up a timer to periodically refresh the IP address display
 func (s *IdleScreen) startIPRefresh() {
-	if !shouldShowIP() {
-		// Past the 2-minute window, stop refreshing
+	if !s.shouldShowIPForScreen() {
+		// Past the 2-minute window and not forced, stop refreshing
 		s.ipTimerID = 0
 		return
 	}
 
 	// Refresh every 5 seconds
 	s.ipTimerID = s.mgr.SetTimeout(5*time.Second, func(scr screen.Screen) {
-		if !shouldShowIP() {
-			// Time's up, do a full redraw to remove the IP bar
+		if !s.shouldShowIPForScreen() {
+			// Time's up and not forced, do a full redraw to remove the IP bar
 			s.ipTimerID = 0
 			s.mgr.Update()
 			return
@@ -192,7 +205,7 @@ func (s *IdleScreen) updateIPBar() {
 
 // drawIPBar draws the IP address bar (call before Flush)
 func (s *IdleScreen) drawIPBar() {
-	if !shouldShowIP() {
+	if !s.shouldShowIPForScreen() {
 		return
 	}
 
@@ -288,6 +301,56 @@ func (s *IdleScreen) HandleEvent(event screen.Event) bool {
 			s.updateCounter()
 			return true
 		}
+	case screen.EventRotaryLongPress:
+		// Long press - toggle IP display
+		inStartupWindow := shouldShowIP()
+		currentlyShowing := s.shouldShowIPForScreen()
+
+		if currentlyShowing {
+			// IP is currently showing - hide it
+			if inStartupWindow {
+				// During startup, set forceHide flag to override
+				s.forceHideIP = true
+				s.forceShowIP = false
+				if s.ipTimerID != 0 {
+					s.mgr.ClearTimeout(s.ipTimerID)
+					s.ipTimerID = 0
+				}
+				if s.ipHideTimerID != 0 {
+					s.mgr.ClearTimeout(s.ipHideTimerID)
+					s.ipHideTimerID = 0
+				}
+			} else {
+				// Manual display - hide immediately
+				s.forceShowIP = false
+				if s.ipTimerID != 0 {
+					s.mgr.ClearTimeout(s.ipTimerID)
+					s.ipTimerID = 0
+				}
+				if s.ipHideTimerID != 0 {
+					s.mgr.ClearTimeout(s.ipHideTimerID)
+					s.ipHideTimerID = 0
+				}
+			}
+		} else {
+			// IP is hidden - show it
+			s.forceHideIP = false
+			s.forceShowIP = true
+			s.lastIP = getIPAddress()
+			s.startIPRefresh()
+			// Set 2-minute auto-hide timer
+			s.ipHideTimerID = s.mgr.SetTimeout(2*time.Minute, func(scr screen.Screen) {
+				s.forceShowIP = false
+				if s.ipTimerID != 0 {
+					s.mgr.ClearTimeout(s.ipTimerID)
+					s.ipTimerID = 0
+				}
+				s.ipHideTimerID = 0
+				s.mgr.Update() // Full redraw to hide IP bar
+			})
+		}
+		s.mgr.Update() // Full redraw to show/hide IP bar
+		return true
 	case screen.EventMQTTConnected:
 		s.updateMQTTIndicator()
 		return true
@@ -333,6 +396,9 @@ func (s *IdleScreen) Exit() {
 	s.counter = 0
 	s.timerID = 0
 	s.ipTimerID = 0
+	s.ipHideTimerID = 0
+	s.forceShowIP = false
+	s.forceHideIP = false
 }
 
 func (s *IdleScreen) Name() string {
