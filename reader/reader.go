@@ -1,6 +1,9 @@
 package reader
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // TagReader is the interface for all tag/card reader implementations.
 // Implementations should block until a tag is read or context is cancelled.
@@ -27,16 +30,12 @@ func New(cfg Config) (TagReader, error) {
 	switch cfg.Type {
 	case "wiegand":
 		return NewWiegand(cfg.Device, cfg.Baud)
-	case "keyboard", "10h-kbd":
-		format := cfg.Format
-		if format == "" {
-			format = "10h" // default to 10 hex digits for backwards compatibility
-		}
-		return NewKeyboard(cfg.Device, format)
+	case "keyboard", "10h-kbd", "10d-kbd", "8h-kbd", "8d-kbd":
+		return NewKeyboard(cfg.Type, cfg.Device)
 	case "serial":
 		return NewSerial(cfg.Device)
 	default:
 		// Default to serial for backwards compatibility
-		return NewSerial(cfg.Device)
+		return nil, fmt.Errorf("Bad reader type \"%s\"", cfg.Type)
 	}
 }

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"strconv"
-	"strings"
 
 	"github.com/kenshaw/evdev"
 )
@@ -13,16 +12,13 @@ import (
 // Keyboard implements TagReader for USB keyboard-style RFID readers
 // that output digits followed by Enter.
 type Keyboard struct {
-	device    *evdev.Evdev
-	numDigits int  // expected number of digits (0 = any)
-	isHex     bool // true for hex input, false for decimal
-	format    string
+	device  *evdev.Evdev
+	msgsize int // 10 or 8 keys
+	base    int // Base 10 or Base 8
 }
 
 // NewKeyboard creates a new keyboard reader on the specified input device.
-// Format specifies the input format: "10h" (10 hex digits), "10d" (10 decimal), "8h", "8d", etc.
-// If format is empty, defaults to "10h" for backwards compatibility.
-func NewKeyboard(device string, format string) (*Keyboard, error) {
+func NewKeyboard(kbdtype string, device string) (*Keyboard, error) {
 	dev, err := evdev.OpenFile(device)
 	if err != nil {
 		return nil, fmt.Errorf("open evdev %s: %w", device, err)
@@ -31,38 +27,26 @@ func NewKeyboard(device string, format string) (*Keyboard, error) {
 	log.Printf("Opened keyboard device: %s", dev.Name())
 	log.Printf("Vendor: 0x%04x, Product: 0x%04x", dev.ID().Vendor, dev.ID().Product)
 
-	// Parse format string (e.g., "10h", "10d", "8h", "8d")
-	numDigits := 0
-	isHex := true
-	if format == "" {
-		format = "10h"
-	}
-	format = strings.ToLower(format)
+	kbd := Keyboard{device: dev}
 
-	if strings.HasSuffix(format, "h") {
-		isHex = true
-		numDigits, _ = strconv.Atoi(strings.TrimSuffix(format, "h"))
-	} else if strings.HasSuffix(format, "d") {
-		isHex = false
-		numDigits, _ = strconv.Atoi(strings.TrimSuffix(format, "d"))
-	} else {
-		// Try to parse as just a number, assume hex
-		numDigits, _ = strconv.Atoi(format)
-		isHex = true
+	switch kbdtype {
+	case "keyboard", "10h-kbd":
+		kbd.base = 16
+		kbd.msgsize = 10
+	case "10d-kbd":
+		kbd.base = 10
+		kbd.msgsize = 10
+	case "8d-kbd":
+		kbd.base = 10
+		kbd.msgsize = 8
+	case "8h-kbd":
+		kbd.base = 16
+		kbd.msgsize = 8
+	default:
+		return nil, fmt.Errorf("Invalid keyboard type \"%s\"", kbdtype)
 	}
-
-	base := "hex"
-	if !isHex {
-		base = "decimal"
-	}
-	log.Printf("Keyboard reader format: %s (%d %s digits)", format, numDigits, base)
-
-	return &Keyboard{
-		device:    dev,
-		numDigits: numDigits,
-		isHex:     isHex,
-		format:    format,
-	}, nil
+	log.Printf("Keyboard base %d keylength %d\n", kbd.base, kbd.msgsize)
+	return &kbd, nil
 }
 
 // Read implements TagReader.Read for keyboard readers.
@@ -90,31 +74,15 @@ func (k *Keyboard) Read(ctx context.Context) (uint64, error) {
 					if strbuf == "" {
 						continue
 					}
-
-					// Check digit count if specified
-					if k.numDigits > 0 && len(strbuf) != k.numDigits {
-						log.Printf("Bad badge: expected %d digits, got %d (%q)", k.numDigits, len(strbuf), strbuf)
-						strbuf = ""
-						continue
-					}
-
-					// Parse based on format
-					var base int
-					if k.isHex {
-						base = 16
-					} else {
-						base = 10
-					}
-
-					number, err := strconv.ParseUint(strbuf, base, 64)
+					number, err := strconv.ParseUint(strbuf, k.base, 64)
 					if err != nil {
-						log.Printf("Bad badge line %q (base %d): %v", strbuf, base, err)
+						log.Printf("Bad badge line %q", strbuf)
 						strbuf = ""
 						continue
 					}
 
 					number &= 0xffffffff
-					log.Printf("Got %s String %s BadgeId %d", k.format, strbuf, number)
+					log.Printf("Got (Raw String %s) BadgeId %d", strbuf, number)
 					return number, nil
 				}
 

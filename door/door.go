@@ -44,8 +44,10 @@ func New(cfg Config) (DoorOpener, error) {
 		return NewGPIO(hw, uint8(*cfg.Pin), true)
 	case "gpio_low", "openlow":
 		return NewGPIO(hw, uint8(*cfg.Pin), false)
-	default:
+	case "none":
 		hw.Close()
 		return &Noop{}, nil
+  default:
+    return nil, fmt.Errorf("Invalid door type \"%s\"",cfg.Type)
 	}
 }
