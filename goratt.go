@@ -86,7 +86,17 @@ func main() {
 		cancel: cancel,
 	}
 
-	// Initialize indicator (LEDs, neopixels)
+	// Initialize MQTT
+	app.mqtt, err = mqtt.New(cfg.MQTT, cfg.ClientID, mqtt.Handlers{
+		OnConnect:    app.onMQTTConnect,
+		OnDisconnect: app.onMQTTDisconnect,
+		OnMessage:    app.onMQTTMessage,
+	})
+	if err != nil {
+		log.Fatalf("Init MQTT: %v", err)
+	}
+
+	// Initialize indicator
 	app.indicator, err = indicator.New(cfg.Indicator)
 	if err != nil {
 		log.Fatalf("Init indicator: %v", err)
@@ -146,26 +156,16 @@ func main() {
 		log.Printf("Warning: could not fetch ACL from API: %v", err)
 	}
 
-	// Handle holdopen flag
-	if *openflag {
-		app.openDoor(&indicator.AccessInfo{Member: "holdopen"})
-		select {} // Block forever
-	}
-
 	// Initialize event pipe for external event injection
 	app.eventPipe, err = eventpipe.New(cfg.EventPipe, app.handleExternalEvent)
 	if err != nil {
 		log.Fatalf("Init event pipe: %v", err)
 	}
 
-	// Initialize MQTT
-	app.mqtt, err = mqtt.New(cfg.MQTT, cfg.ClientID, mqtt.Handlers{
-		OnConnect:    app.onMQTTConnect,
-		OnDisconnect: app.onMQTTDisconnect,
-		OnMessage:    app.onMQTTMessage,
-	})
-	if err != nil {
-		log.Fatalf("Init MQTT: %v", err)
+	// Handle holdopen flag
+	if *openflag {
+		app.openDoor(&indicator.AccessInfo{Member: "holdopen"})
+		select {} // Block forever
 	}
 
 	// Start background goroutines

@@ -82,7 +82,7 @@ TLS is also **optional**. If no TLS certificates are provided, the connection us
 | Parameter | Description |
 | --------- | ----------- |
 | `type` | Reader type: `wiegand`, `keyboard`, or `serial` |
-| `device` | Device path (e.g., `/dev/serial0`, `/dev/input/event0`) |
+| `device` | Device path (e.g., `/dev/serial0` for serial, `/dev/input/event0` for keyboard) |
 | `baud` | Baud rate for serial devices (default: 9600 for wiegand, 115200 for serial) |
 | `format` | For keyboard readers: digit format (see below) |
 
