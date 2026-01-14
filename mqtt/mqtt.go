@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"time"
@@ -108,7 +107,7 @@ func buildTLSConfig(cfg Config) (*tls.Config, error) {
 
 	// Load CA cert if provided
 	if cfg.CACert != "" {
-		caCert, err := ioutil.ReadFile(cfg.CACert)
+		caCert, err := os.ReadFile(cfg.CACert)
 		if err != nil {
 			return nil, fmt.Errorf("read CA cert: %w", err)
 		}

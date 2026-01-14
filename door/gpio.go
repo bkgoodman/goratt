@@ -1,6 +1,8 @@
 package door
 
 import (
+	"log"
+
 	"github.com/hjkoskel/govattu"
 )
 
@@ -22,7 +24,9 @@ func NewGPIO(hw govattu.Vattu, pin uint8, openHigh bool) (*GPIO, error) {
 	}
 
 	// Start in closed state
-	g.Close()
+	if err := g.Close(); err != nil {
+		log.Printf("Warning: failed to close GPIO pin: %v", err)
+	}
 	return g, nil
 }
 

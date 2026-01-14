@@ -4,6 +4,7 @@ package rotary
 
 import (
 	"fmt"
+	"log"
 	"sync/atomic"
 	"time"
 
@@ -81,7 +82,9 @@ func New(cfg Config, handlers Handlers) (*Rotary, error) {
 		gpiocdev.WithDebounce(debounceRotary),
 		gpiocdev.WithEventHandler(r.handleEvent))
 	if err != nil {
-		r.dtLine.Close()
+		if err := r.dtLine.Close(); err != nil {
+			log.Printf("Warning: failed to close DT line: %v", err)
+		}
 		return nil, err
 	}
 
@@ -93,8 +96,12 @@ func New(cfg Config, handlers Handlers) (*Rotary, error) {
 			gpiocdev.WithDebounce(debounceButton),
 			gpiocdev.WithEventHandler(r.handleButton))
 		if err != nil {
-			r.dtLine.Close()
-			r.clkLine.Close()
+			if err := r.dtLine.Close(); err != nil {
+				log.Printf("Warning: failed to close DT line: %v", err)
+			}
+			if err := r.clkLine.Close(); err != nil {
+				log.Printf("Warning: failed to close CLK line: %v", err)
+			}
 			return nil, err
 		}
 	}
@@ -104,11 +111,12 @@ func New(cfg Config, handlers Handlers) (*Rotary, error) {
 
 func (r *Rotary) handleEvent(evt gpiocdev.LineEvent) {
 	var newState int
-	if evt.Type == gpiocdev.LineEventRisingEdge {
+	switch evt.Type {
+	case gpiocdev.LineEventRisingEdge:
 		newState = 1
-	} else if evt.Type == gpiocdev.LineEventFallingEdge {
+	case gpiocdev.LineEventFallingEdge:
 		newState = 0
-	} else {
+	default:
 		return
 	}
 
@@ -137,7 +145,8 @@ func (r *Rotary) handleEvent(evt gpiocdev.LineEvent) {
 }
 
 func (r *Rotary) handleButton(evt gpiocdev.LineEvent) {
-	if evt.Type == gpiocdev.LineEventFallingEdge {
+	switch evt.Type {
+	case gpiocdev.LineEventFallingEdge:
 		// Button pressed - start long-press timer
 		r.btnPressTime = time.Now()
 		r.longPressFired = false
@@ -157,7 +166,7 @@ func (r *Rotary) handleButton(evt gpiocdev.LineEvent) {
 				}
 			}
 		})
-	} else if evt.Type == gpiocdev.LineEventRisingEdge {
+	case gpiocdev.LineEventRisingEdge:
 		// Button released
 		if r.longPressTimer != nil {
 			r.longPressTimer.Stop()
@@ -187,13 +196,19 @@ func (r *Rotary) Release() error {
 		r.longPressTimer.Stop()
 	}
 	if r.dtLine != nil {
-		r.dtLine.Close()
+		if err := r.dtLine.Close(); err != nil {
+			log.Printf("Warning: failed to close DT line: %v", err)
+		}
 	}
 	if r.clkLine != nil {
-		r.clkLine.Close()
+		if err := r.clkLine.Close(); err != nil {
+			log.Printf("Warning: failed to close CLK line: %v", err)
+		}
 	}
 	if r.btnLine != nil {
-		r.btnLine.Close()
+		if err := r.btnLine.Close(); err != nil {
+			log.Printf("Warning: failed to close button line: %v", err)
+		}
 	}
 	return nil
 }

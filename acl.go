@@ -7,7 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -81,7 +81,7 @@ func (a *ACLManager) FetchFromAPI() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	caCert, err := ioutil.ReadFile(a.cfg.API.CAFile)
+	caCert, err := os.ReadFile(a.cfg.API.CAFile)
 	if err != nil {
 		return fmt.Errorf("read CA cert: %w", err)
 	}
@@ -111,9 +111,13 @@ func (a *ACLManager) FetchFromAPI() error {
 	if err != nil {
 		return fmt.Errorf("make request: %w", err)
 	}
-	defer response.Body.Close()
+	defer func() {
+		if err := response.Body.Close(); err != nil {
+			log.Printf("Warning: failed to close response body: %v", err)
+		}
+	}()
 
-	body, err := ioutil.ReadAll(response.Body)
+	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		return fmt.Errorf("read response: %w", err)
 	}
@@ -151,9 +155,13 @@ func (a *ACLManager) FetchFromAPI() error {
 			access = "allowed"
 		}
 		// Format: tag access level member nickname warning (tab-separated for nickname/warning which may have spaces)
-		fmt.Fprintf(file, "%d\t%s\t%d\t%s\t%s\t%s\n", number, access, item.Level, item.Member, item.Nickname, item.Warning)
+		if _, err := fmt.Fprintf(file, "%d\t%s\t%d\t%s\t%s\t%s\n", number, access, item.Level, item.Member, item.Nickname, item.Warning); err != nil {
+			log.Printf("Warning: failed to write ACL entry: %v", err)
+		}
 	}
-	file.Close()
+	if err := file.Close(); err != nil {
+		log.Printf("Warning: failed to close ACL file: %v", err)
+	}
 
 	if err := os.Rename(a.tagFile+".tmp", a.tagFile); err != nil {
 		return fmt.Errorf("rename tag file: %w", err)
@@ -183,7 +191,11 @@ func (a *ACLManager) LoadFromFile() error {
 	if err != nil {
 		return fmt.Errorf("open tag file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Printf("Warning: failed to close tag file: %v", err)
+		}
+	}()
 
 	scanner := bufio.NewScanner(file)
 

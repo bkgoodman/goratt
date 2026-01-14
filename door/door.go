@@ -2,6 +2,7 @@ package door
 
 import (
 	"fmt"
+	"log"
 
 	"github.com/hjkoskel/govattu"
 )
@@ -45,9 +46,11 @@ func New(cfg Config) (DoorOpener, error) {
 	case "gpio_low", "openlow":
 		return NewGPIO(hw, uint8(*cfg.Pin), false)
 	case "none":
-		hw.Close()
+		if err := hw.Close(); err != nil {
+			log.Printf("Warning: failed to close GPIO hardware: %v", err)
+		}
 		return &Noop{}, nil
-  default:
-    return nil, fmt.Errorf("Invalid door type \"%s\"",cfg.Type)
+	default:
+		return nil, fmt.Errorf("invalid door type \"%s\"", cfg.Type)
 	}
 }

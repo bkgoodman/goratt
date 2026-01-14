@@ -2,6 +2,7 @@ package indicator
 
 import (
 	"fmt"
+	"log"
 	"os"
 )
 
@@ -80,6 +81,8 @@ func (n *Neopixel) SetConnected() {
 
 func (n *Neopixel) write(s string) {
 	if n.pipe != nil {
-		n.pipe.Write([]byte(s))
+		if _, err := n.pipe.Write([]byte(s)); err != nil {
+			log.Printf("Warning: failed to write to neopixel pipe: %v", err)
+		}
 	}
 }

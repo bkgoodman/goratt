@@ -36,7 +36,9 @@ func New(cfg Config, handler EventHandler) (*EventPipe, error) {
 	}
 
 	// Remove existing pipe if it exists
-	os.Remove(cfg.Path)
+	if err := os.Remove(cfg.Path); err != nil && !os.IsNotExist(err) {
+		log.Printf("Warning: failed to remove existing pipe %s: %v", cfg.Path, err)
+	}
 
 	// Create the named pipe
 	if err := syscall.Mkfifo(cfg.Path, 0666); err != nil {
@@ -70,7 +72,9 @@ func (ep *EventPipe) Start() {
 
 		// Set read deadline to allow periodic checking of closed flag
 		ep.readLoop(file)
-		file.Close()
+		if err := file.Close(); err != nil {
+			log.Printf("Warning: failed to close event pipe file: %v", err)
+		}
 	}
 }
 
@@ -79,7 +83,9 @@ func (ep *EventPipe) readLoop(file *os.File) {
 
 	for !ep.closed.Load() {
 		// Set a short read deadline so we can check the closed flag periodically
-		file.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+		if err := file.SetReadDeadline(time.Now().Add(500 * time.Millisecond)); err != nil {
+			log.Printf("Warning: failed to set read deadline: %v", err)
+		}
 
 		line, err := reader.ReadString('\n')
 		if err != nil {

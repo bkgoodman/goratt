@@ -69,7 +69,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Open config: %v", err)
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			log.Printf("Warning: failed to close config file: %v", err)
+		}
+	}()
 
 	var cfg Config
 	if err := yaml.NewDecoder(f).Decode(&cfg); err != nil {
@@ -214,19 +218,31 @@ func main() {
 
 	// Cleanup
 	app.mqtt.Disconnect()
-	app.reader.Close()
-	app.door.Release()
+	if err := app.reader.Close(); err != nil {
+		log.Printf("Warning: failed to close reader: %v", err)
+	}
+	if err := app.door.Release(); err != nil {
+		log.Printf("Warning: failed to release door: %v", err)
+	}
 	app.indicator.Shutdown()
-	app.indicator.Release()
+	if err := app.indicator.Release(); err != nil {
+		log.Printf("Warning: failed to release indicator: %v", err)
+	}
 	if app.display != nil {
 		app.display.Shutdown()
-		app.display.Release()
+		if err := app.display.Release(); err != nil {
+			log.Printf("Warning: failed to release display: %v", err)
+		}
 	}
 	if app.rotary != nil {
-		app.rotary.Release()
+		if err := app.rotary.Release(); err != nil {
+			log.Printf("Warning: failed to release rotary: %v", err)
+		}
 	}
 	if app.eventPipe != nil {
-		app.eventPipe.Close()
+		if err := app.eventPipe.Close(); err != nil {
+			log.Printf("Warning: failed to close event pipe: %v", err)
+		}
 	}
 
 	fmt.Println("Shutdown complete")
@@ -511,9 +527,6 @@ func (app *App) ProcessPayment() error {
 	log.Printf("Payment processed successfully for %s", member)
 	return nil
 }
-
-// currentVendingSession holds the active vending session
-var currentVendingSession *VendingSessionState
 
 func (app *App) openDoor(info *indicator.AccessInfo) {
 	app.indicator.Opening(info)
