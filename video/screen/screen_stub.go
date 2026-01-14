@@ -156,9 +156,14 @@ func (m *Manager) ClearTimeout(id TimerID) bool                              { r
 func (m *Manager) ClearAllTimeouts()                                         {}
 func (m *Manager) SetMQTTConnected(connected bool)                           {}
 func (m *Manager) IsMQTTConnected() bool                                     { return false }
+func (m *Manager) SetMockMode(mockMode bool)                                 {}
+func (m *Manager) IsMockMode() bool                                          { return false }
 func (m *Manager) SetVendingSession(member, nickname string, amount float64) {}
 func (m *Manager) GetVendingSession() (string, string, float64)              { return "", "", 0 }
 func (m *Manager) GetVendingBalance() float64                                { return 0 }
+func (m *Manager) SetVendingBalance(balance float64)                         {}
 func (m *Manager) SetVendingAddAmount(addAmount float64)                     {}
 func (m *Manager) GetVendingAddAmount() float64                              { return 0 }
+func (m *Manager) SetVendingLastLog(lastLog int)                             {}
+func (m *Manager) GetVendingLastLog() int                                    { return 0 }
 func (m *Manager) ClearVendingSession()                                      {}

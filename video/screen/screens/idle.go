@@ -242,6 +242,9 @@ func (s *IdleScreen) Update() {
 	// Draw MQTT disconnected indicator if not connected
 	s.drawMQTTIndicator()
 
+	// Draw mock mode indicator if in mock mode
+	s.drawMockModeIndicator()
+
 	// Draw IP bar if within startup window
 	s.drawIPBar()
 
@@ -257,12 +260,33 @@ func (s *IdleScreen) drawMQTTIndicator() {
 	// Red bar at bottom
 	barHeight := 24
 	barY := s.mgr.Height() - barHeight
+	if s.mgr.IsMockMode() {
+		// Move up to make room for mock mode indicator
+		barY -= barHeight
+	}
 	s.mgr.FillRect(0, barY, s.mgr.Width(), barHeight, 0.8, 0, 0)
 
 	// White text
 	s.mgr.SetFontSize(16)
 	s.mgr.DC().SetRGB(1, 1, 1)
 	s.mgr.DC().DrawStringAnchored("NO MQTT", float64(s.mgr.Width()/2), float64(barY+barHeight/2), 0.5, 0.5)
+}
+
+// drawMockModeIndicator draws a yellow "MOCK MODE" indicator at bottom if enabled
+func (s *IdleScreen) drawMockModeIndicator() {
+	if !s.mgr.IsMockMode() {
+		return
+	}
+
+	// Yellow bar at very bottom
+	barHeight := 24
+	barY := s.mgr.Height() - barHeight
+	s.mgr.FillRect(0, barY, s.mgr.Width(), barHeight, 0.8, 0.8, 0)
+
+	// Black text
+	s.mgr.SetFontSize(16)
+	s.mgr.DC().SetRGB(0, 0, 0)
+	s.mgr.DC().DrawStringAnchored("DEBUG MODE", float64(s.mgr.Width()/2), float64(barY+barHeight/2), 0.5, 0.5)
 }
 
 // updateCounter does a partial update of just the counter area
@@ -365,6 +389,10 @@ func (s *IdleScreen) HandleEvent(event screen.Event) bool {
 func (s *IdleScreen) updateMQTTIndicator() {
 	barHeight := 24
 	barY := s.mgr.Height() - barHeight
+	if s.mgr.IsMockMode() {
+		// Move up to make room for mock mode indicator
+		barY -= barHeight
+	}
 
 	if s.mgr.IsMQTTConnected() {
 		// Clear the bar area with background color

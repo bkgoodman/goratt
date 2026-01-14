@@ -25,6 +25,7 @@ import (
 	"goratt/mqtt"
 	"goratt/reader"
 	"goratt/rotary"
+	"goratt/vending"
 	"goratt/video"
 	"goratt/video/screen"
 )
@@ -33,17 +34,19 @@ var myBuild string
 
 // App holds the application state and dependencies.
 type App struct {
-	cfg       *Config
-	mqtt      *mqtt.Client
-	reader    reader.TagReader
-	door      door.DoorOpener
-	indicator indicator.Indicator
-	display   *video.Display
-	rotary    *rotary.Rotary
-	eventPipe *eventpipe.EventPipe
-	acl       *ACLManager
-	ctx       context.Context
-	cancel    context.CancelFunc
+	cfg                   *Config
+	mqtt                  *mqtt.Client
+	reader                reader.TagReader
+	door                  door.DoorOpener
+	indicator             indicator.Indicator
+	display               *video.Display
+	rotary                *rotary.Rotary
+	eventPipe             *eventpipe.EventPipe
+	acl                   *ACLManager
+	vending               *vending.Client
+	currentVendingSession *VendingSessionState
+	ctx                   context.Context
+	cancel                context.CancelFunc
 }
 
 // OpenRequest represents a remote open request.
@@ -154,6 +157,27 @@ func main() {
 	}
 	if err := app.acl.FetchFromAPI(); err != nil {
 		log.Printf("Warning: could not fetch ACL from API: %v", err)
+	}
+
+	// Initialize vending API client
+	var mockMode bool
+	if cfg.API.URL != "" {
+		app.vending = vending.NewClient(cfg.API.URL)
+		log.Printf("Vending API client initialized: %s", cfg.API.URL)
+
+		// Set global payment processor
+		vending.SetGlobalProcessor(app)
+		mockMode = false
+	} else {
+		log.Printf("Warning: no API URL configured, using mock mode")
+		// Set mock processor for testing
+		vending.SetGlobalProcessor(&vending.MockProcessor{ShouldFail: false})
+		mockMode = true
+	}
+
+	// Store mock mode flag for display
+	if app.display != nil {
+		app.display.Manager().SetMockMode(mockMode)
 	}
 
 	// Initialize event pipe for external event injection
@@ -391,8 +415,28 @@ func (app *App) handleTag(tagID uint64) {
 
 	// Start vending session instead of opening door
 	if app.display != nil && info != nil {
-		// Set vending session with member info and default amount
+		// Query balance from API
+		balance := 0.0
+		lastLog := 0
+		if app.vending != nil {
+			if resp, err := app.vending.QueryBalance(info.Member); err == nil {
+				balance = resp.Balance
+				lastLog = resp.LastLog
+				log.Printf("Queried balance for %s: $%.2f (lastLog: %d)", info.Member, balance, lastLog)
+			} else {
+				log.Printf("Failed to query balance for %s: %v", info.Member, err)
+				// Continue with zero balance on API error
+			}
+		} else {
+			log.Printf("Vending API not available, using zero balance")
+		}
+
+		// Set vending session with member info, default amount, and balance
 		app.display.Manager().SetVendingSession(info.Member, info.Nickname, 1.00)
+		app.display.Manager().SetVendingAddAmount(0) // No add amount initially
+		// Store balance and lastLog in manager for payment processing
+		// We'll need to extend the manager to store these
+		app.startVendingSession(info.Member, info.Nickname, balance, lastLog)
 		// Switch to select amount screen
 		app.display.Manager().SwitchTo(screen.ScreenSelectAmount)
 	} else {
@@ -401,6 +445,75 @@ func (app *App) handleTag(tagID uint64) {
 		app.openDoor(info)
 	}
 }
+
+// startVendingSession initializes a vending session with balance info
+func (app *App) startVendingSession(member, nickname string, balance float64, lastLog int) {
+	// Store balance and lastLog for payment processing
+	if app.display != nil {
+		mgr := app.display.Manager()
+		mgr.SetVendingBalance(balance)
+		mgr.SetVendingLastLog(lastLog)
+		app.currentVendingSession = &VendingSessionState{
+			Member:  member,
+			Balance: balance,
+			LastLog: lastLog,
+		}
+	}
+}
+
+// VendingSessionState holds the current vending session state
+type VendingSessionState struct {
+	Member  string
+	Balance float64
+	LastLog int
+}
+
+// ProcessPayment implements the PaymentProcessor interface
+func (app *App) ProcessPayment() error {
+	if app.vending == nil {
+		return fmt.Errorf("vending API not available")
+	}
+
+	if app.currentVendingSession == nil {
+		return fmt.Errorf("no active vending session")
+	}
+
+	if app.display == nil {
+		return fmt.Errorf("no display available")
+	}
+
+	mgr := app.display.Manager()
+	member, nickname, amount := mgr.GetVendingSession()
+	balance := mgr.GetVendingBalance()
+	addAmount := mgr.GetVendingAddAmount()
+	lastLog := mgr.GetVendingLastLog()
+
+	// Create vending session for API
+	session := &vending.VendingSession{
+		Member:     member,
+		Nickname:   nickname,
+		Balance:    balance,
+		Amount:     amount,
+		AddAmount:  addAmount,
+		ServiceFee: 0.30, // $0.30 service fee (could be configurable)
+		LastLog:    lastLog,
+	}
+
+	log.Printf("Processing payment: Member=%s, Amount=$%.2f, AddAmount=$%.2f, Fee=$%.2f",
+		session.Member, session.Amount, session.AddAmount, session.ServiceFee)
+
+	// Process the payment
+	if err := app.vending.ProcessPurchase(session); err != nil {
+		log.Printf("Payment processing failed: %v", err)
+		return err
+	}
+
+	log.Printf("Payment processed successfully for %s", member)
+	return nil
+}
+
+// currentVendingSession holds the active vending session
+var currentVendingSession *VendingSessionState
 
 func (app *App) openDoor(info *indicator.AccessInfo) {
 	app.indicator.Opening(info)

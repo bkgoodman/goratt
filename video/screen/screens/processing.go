@@ -3,9 +3,9 @@
 package screens
 
 import (
-	"math/rand"
 	"time"
 
+	"goratt/vending"
 	"goratt/video/screen"
 )
 
@@ -35,14 +35,38 @@ func (s *ProcessingScreen) Init(mgr *screen.Manager) {
 	// Start spinner animation
 	s.startSpinnerAnimation()
 
-	// After 5 seconds, randomly go to Success or Failed
-	s.timeoutID = mgr.SetTimeout(5*time.Second, func(scr screen.Screen) {
-		// Random success/failure for now
-		if rand.Float32() < 0.5 {
-			mgr.SwitchTo(screen.ScreenSuccess)
-		} else {
-			mgr.SwitchTo(screen.ScreenPaymentFailed)
+	// Process payment in background goroutine with minimum delay
+	go func() {
+		// Call the global payment processor
+		err := vending.ProcessPayment()
+
+		// Wait for minimum processing time to ensure spinner is visible
+		time.Sleep(3 * time.Second)
+
+		// Stop spinner animation before switching screens
+		if s.spinnerTimerID != 0 {
+			mgr.ClearTimeout(s.spinnerTimerID)
+			s.spinnerTimerID = 0
 		}
+
+		// Clear spinner area completely to prevent any artifacts
+		s.mgr.FillRect(s.spinnerX, s.spinnerY, spinnerSize, spinnerSize, 0, 0.4, 0.6)
+		s.mgr.FlushRect(s.spinnerX, s.spinnerY, spinnerSize, spinnerSize)
+
+		// Small delay to ensure framebuffer is updated before screen switch
+		time.Sleep(50 * time.Millisecond)
+
+		// Switch to appropriate result screen
+		if err != nil {
+			mgr.SwitchTo(screen.ScreenPaymentFailed)
+		} else {
+			mgr.SwitchTo(screen.ScreenSuccess)
+		}
+	}()
+
+	// Set a timeout in case payment processing hangs
+	s.timeoutID = mgr.SetTimeout(30*time.Second, func(scr screen.Screen) {
+		mgr.SwitchTo(screen.ScreenPaymentFailed)
 	})
 }
 
@@ -100,8 +124,12 @@ func (s *ProcessingScreen) HandleEvent(event screen.Event) bool {
 }
 
 func (s *ProcessingScreen) Exit() {
+	// Clear timers
 	s.timeoutID = 0
 	s.spinnerTimerID = 0
+
+	// Clear spinner area to prevent artifacts
+	s.mgr.FillRect(s.spinnerX, s.spinnerY, spinnerSize, spinnerSize, 0, 0.4, 0.6)
 }
 
 func (s *ProcessingScreen) Name() string {

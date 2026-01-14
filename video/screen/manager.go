@@ -67,6 +67,7 @@ type Manager struct {
 
 	// App-level state that persists across screen switches
 	mqttConnected bool
+	mockMode      bool // Whether we're running in mock mode
 
 	// Vending session state
 	vendingMember    string
@@ -74,6 +75,7 @@ type Manager struct {
 	vendingAmount    float64 // Selected purchase amount in dollars
 	vendingBalance   float64 // Current account balance
 	vendingAddAmount float64 // Amount to add to account
+	vendingLastLog   int     // Last vending log ID for API consistency
 }
 
 // NewManager creates a new screen manager.
@@ -252,6 +254,20 @@ func (m *Manager) IsMQTTConnected() bool {
 	return m.mqttConnected
 }
 
+// SetMockMode sets the mock mode flag.
+func (m *Manager) SetMockMode(mockMode bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.mockMode = mockMode
+}
+
+// IsMockMode returns whether we're running in mock mode.
+func (m *Manager) IsMockMode() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.mockMode
+}
+
 // SetVendingSession sets the current vending session info.
 func (m *Manager) SetVendingSession(member, nickname string, amount float64) {
 	m.mu.Lock()
@@ -277,6 +293,13 @@ func (m *Manager) GetVendingBalance() float64 {
 	return m.vendingBalance
 }
 
+// SetVendingBalance sets the current account balance.
+func (m *Manager) SetVendingBalance(balance float64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.vendingBalance = balance
+}
+
 // SetVendingAddAmount sets the amount to add to account.
 func (m *Manager) SetVendingAddAmount(addAmount float64) {
 	m.mu.Lock()
@@ -291,6 +314,20 @@ func (m *Manager) GetVendingAddAmount() float64 {
 	return m.vendingAddAmount
 }
 
+// SetVendingLastLog sets the last vending log ID.
+func (m *Manager) SetVendingLastLog(lastLog int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.vendingLastLog = lastLog
+}
+
+// GetVendingLastLog returns the last vending log ID.
+func (m *Manager) GetVendingLastLog() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.vendingLastLog
+}
+
 // ClearVendingSession clears the vending session state.
 func (m *Manager) ClearVendingSession() {
 	m.mu.Lock()
@@ -300,6 +337,7 @@ func (m *Manager) ClearVendingSession() {
 	m.vendingAmount = 0
 	m.vendingBalance = 0
 	m.vendingAddAmount = 0
+	m.vendingLastLog = 0
 }
 
 // SetTimeout sets a one-shot timer that calls the callback after the duration.

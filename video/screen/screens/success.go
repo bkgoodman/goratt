@@ -32,6 +32,10 @@ func (s *SuccessScreen) Init(mgr *screen.Manager) {
 	// Clear session after successful payment
 	mgr.ClearVendingSession()
 
+	// Force a full framebuffer clear to prevent any artifacts from previous screen
+	mgr.FillBackground(0, 0.6, 0)
+	mgr.Flush()
+
 	// Auto-dismiss after 10 seconds
 	s.timeoutID = mgr.SetTimeout(10*time.Second, func(scr screen.Screen) {
 		mgr.SwitchTo(screen.ScreenIdle)
@@ -39,27 +43,29 @@ func (s *SuccessScreen) Init(mgr *screen.Manager) {
 }
 
 func (s *SuccessScreen) Update() {
+	// Clear entire framebuffer first
 	s.mgr.FillBackground(0, 0.6, 0) // Green background
 
-	// Success icon/title
-	s.mgr.SetFontSize(72)
-	s.mgr.DrawCentered("✓", float64(s.mgr.Height()/2)-60, 1, 1, 1)
+	// Success title (larger, no special character)
+	s.mgr.SetFontSize(64)
+	s.mgr.DrawCentered("SUCCESS", float64(s.mgr.Height()/2)-60, 1, 1, 1)
 
-	s.mgr.SetFontSize(48)
-	s.mgr.DrawCentered("Success!", float64(s.mgr.Height()/2), 1, 1, 1)
+	// Success message
+	s.mgr.SetFontSize(36)
+	s.mgr.DrawCentered("Payment Complete", float64(s.mgr.Height()/2)-10, 1, 1, 1)
 
 	// Show transaction details
 	s.mgr.SetFontSize(24)
 	if s.addAmount > 0 {
-		s.mgr.DrawCentered(fmt.Sprintf("Paid: $%.2f", s.amount), float64(s.mgr.Height()/2)+50, 0.9, 0.9, 0.9)
-		s.mgr.DrawCentered(fmt.Sprintf("Added: $%.2f", s.addAmount), float64(s.mgr.Height()/2)+80, 0.9, 0.9, 0.9)
+		s.mgr.DrawCentered(fmt.Sprintf("Paid: $%.2f", s.amount), float64(s.mgr.Height()/2)+30, 0.9, 0.9, 0.9)
+		s.mgr.DrawCentered(fmt.Sprintf("Added: $%.2f", s.addAmount), float64(s.mgr.Height()/2)+60, 0.9, 0.9, 0.9)
 	} else {
-		s.mgr.DrawCentered(fmt.Sprintf("Paid: $%.2f", s.amount), float64(s.mgr.Height()/2)+50, 0.9, 0.9, 0.9)
+		s.mgr.DrawCentered(fmt.Sprintf("Paid: $%.2f", s.amount), float64(s.mgr.Height()/2)+30, 0.9, 0.9, 0.9)
 	}
 
 	// Instructions
 	s.mgr.SetFontSize(20)
-	s.mgr.DrawCentered("Press button to continue", float64(s.mgr.Height()/2)+120, 0.8, 0.8, 0.8)
+	s.mgr.DrawCentered("Press button to continue", float64(s.mgr.Height()/2)+100, 0.8, 0.8, 0.8)
 
 	s.mgr.Flush()
 }
