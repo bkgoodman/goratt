@@ -29,6 +29,9 @@ func (s *AbortedScreen) Init(mgr *screen.Manager) {
 	s.timeoutID = mgr.SetTimeout(5*time.Second, func(scr screen.Screen) {
 		mgr.SwitchTo(screen.ScreenIdle)
 	})
+
+	// Play purchase audio
+	s.mgr.PlayAudio("canceled_16.pcm")
 }
 
 func (s *AbortedScreen) Update() {

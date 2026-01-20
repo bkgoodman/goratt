@@ -1,3 +1,5 @@
+github.com/Narsil/alsa-go v0.0.0-20121118214105-deca482488fb h1:TvmBpRyCIFWUmKWUY30mMrxHDeI68QaqfsR4Q6nnph0=
+github.com/Narsil/alsa-go v0.0.0-20121118214105-deca482488fb/go.mod h1:vVAD8jcgWmNiCE4MvDS6KkgqC/38ryGBAPt7NZNCB5U=
 github.com/creack/goselect v0.1.2 h1:2DNy14+JPjRBgPzAd1thbQp4BSIihxcBf0IXhQXDRa0=
 github.com/creack/goselect v0.1.2/go.mod h1:a/NhLweNvqIYMuxcMOuWY516Cimucms3DglDzQP3hKY=
 github.com/d21d3q/framebuffer v0.0.0-20240523132934-e5c64e36408d h1:eXeReSIBBqPD67eYd4pRrIuSlCXqy7CW9mfZF4uVhtw=

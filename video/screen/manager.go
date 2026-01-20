@@ -76,6 +76,11 @@ type Manager struct {
 	vendingBalance   float64 // Current account balance
 	vendingAddAmount float64 // Amount to add to account
 	vendingLastLog   int     // Last vending log ID for API consistency
+
+	// Audio stop function
+	stopAudioFn func()
+	// Audio play function
+	playAudioFn func(filename string)
 }
 
 // NewManager creates a new screen manager.
@@ -111,6 +116,11 @@ func (m *Manager) SwitchTo(id ScreenID) {
 		m.mu.Unlock()
 		log.Printf("Screen: unknown screen ID %d", id)
 		return
+	}
+
+	// Stop any ongoing audio playback
+	if m.stopAudioFn != nil {
+		m.stopAudioFn()
 	}
 
 	if m.current != nil {
@@ -411,5 +421,29 @@ func (m *Manager) clearTimersForScreenLocked(screen Screen) {
 			st.timer.Stop()
 			delete(m.timers, id)
 		}
+	}
+}
+
+// SetStopAudioFn sets the function to call to stop audio playback.
+func (m *Manager) SetStopAudioFn(fn func()) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.stopAudioFn = fn
+}
+
+// SetPlayAudioFn sets the function to call to play audio.
+func (m *Manager) SetPlayAudioFn(fn func(filename string)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.playAudioFn = fn
+}
+
+// PlayAudio calls the play audio function if set.
+func (m *Manager) PlayAudio(filename string) {
+	m.mu.Lock()
+	fn := m.playAudioFn
+	m.mu.Unlock()
+	if fn != nil {
+		fn(filename)
 	}
 }

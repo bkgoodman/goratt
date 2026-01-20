@@ -40,6 +40,9 @@ func (s *PaymentFailedScreen) Init(mgr *screen.Manager) {
 	s.timeoutID = mgr.SetTimeout(10*time.Second, func(scr screen.Screen) {
 		mgr.SwitchTo(screen.ScreenIdle)
 	})
+
+	// Play purchase audio
+	s.mgr.PlayAudio("error_16.pcm")
 }
 
 func (s *PaymentFailedScreen) Update() {

@@ -32,6 +32,8 @@ type SelectAmountScreen struct {
 	updateTimerID  screen.TimerID
 	pendingUpdate  bool
 	updateInterval time.Duration
+
+	exited bool
 }
 
 // NewSelectAmountScreen creates a new select amount screen.
@@ -69,8 +71,13 @@ func (s *SelectAmountScreen) Init(mgr *screen.Manager) {
 	s.pendingUpdate = false
 	s.updateTimerID = 0
 
+	s.exited = false
+
 	// Start timeout timer
 	s.startTimeout()
+
+	// Play purchase audio
+	s.mgr.PlayAudio("purchase_16.pcm")
 }
 
 func (s *SelectAmountScreen) startTimeout() {
@@ -153,7 +160,7 @@ func (s *SelectAmountScreen) HandleEvent(event screen.Event) bool {
 				s.pendingUpdate = true
 				s.updateTimerID = s.mgr.SetTimeout(s.updateInterval, func(scr screen.Screen) {
 					// Check if we're still the active screen
-					if s.updateTimerID != 0 {
+					if !s.exited && s.updateTimerID != 0 {
 						s.pendingUpdate = false
 						s.updateTimerID = 0
 						s.updateAmountDisplay()
@@ -187,6 +194,7 @@ func (s *SelectAmountScreen) Exit() {
 	s.timeoutID = 0
 	s.updateTimerID = 0
 	s.pendingUpdate = false
+	s.exited = true
 }
 
 func (s *SelectAmountScreen) Name() string {

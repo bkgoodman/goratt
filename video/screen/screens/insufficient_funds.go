@@ -33,6 +33,8 @@ type InsufficientFundsScreen struct {
 	updateY      int
 	updateWidth  int
 	updateHeight int
+
+	exited bool
 }
 
 // NewInsufficientFundsScreen creates a new insufficient funds screen.
@@ -70,8 +72,13 @@ func (s *InsufficientFundsScreen) Init(mgr *screen.Manager) {
 	s.pendingUpdate = false
 	s.updateTimerID = 0
 
+	s.exited = false
+
 	// Start timeout timer
 	s.startTimeout()
+
+	// Play purchase audio
+	s.mgr.PlayAudio("reup_16.pcm")
 }
 
 func (s *InsufficientFundsScreen) startTimeout() {
@@ -159,7 +166,7 @@ func (s *InsufficientFundsScreen) HandleEvent(event screen.Event) bool {
 			if !s.pendingUpdate {
 				s.pendingUpdate = true
 				s.updateTimerID = s.mgr.SetTimeout(s.updateInterval, func(scr screen.Screen) {
-					if s.updateTimerID != 0 {
+					if !s.exited && s.updateTimerID != 0 {
 						s.pendingUpdate = false
 						s.updateTimerID = 0
 						s.updateAmountsDisplay()
@@ -193,6 +200,7 @@ func (s *InsufficientFundsScreen) Exit() {
 	s.timeoutID = 0
 	s.updateTimerID = 0
 	s.pendingUpdate = false
+	s.exited = true
 }
 
 func (s *InsufficientFundsScreen) Name() string {

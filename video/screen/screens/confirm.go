@@ -47,6 +47,10 @@ func (s *ConfirmScreen) Init(mgr *screen.Manager) {
 		// Timeout - abort
 		mgr.SwitchTo(screen.ScreenAborted)
 	})
+
+	// Play purchase audio
+	s.mgr.PlayAudio("confirm_16.pcm")
+
 }
 
 func (s *ConfirmScreen) Update() {

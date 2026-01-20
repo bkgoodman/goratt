@@ -41,13 +41,14 @@ type Config struct {
 type Display struct {
 	dc              *gg.Context
 	pixBuffer       []byte
-	backBuffer      []byte
 	rgbaImage       *image.RGBA
 	width           int // Logical width (after rotation)
 	height          int // Logical height (after rotation)
 	fbWidth         int // Actual framebuffer width
 	fbHeight        int // Actual framebuffer height
 	lineLengthBytes int
+	bpp             int // Bits per pixel
+	bytesPerPixel   int // Bytes per pixel
 	initialized     bool
 	rotation        Rotation
 
@@ -107,7 +108,8 @@ func (v *Display) init() error {
 	v.fbWidth = int(varInfo.XRes)
 	v.fbHeight = int(varInfo.YRes)
 	v.lineLengthBytes = int(fixedInfo.LineLength)
-	v.backBuffer = make([]byte, v.fbHeight*v.lineLengthBytes)
+	v.bpp = int(varInfo.BitsPerPixel)
+	v.bytesPerPixel = v.bpp / 8
 
 	// Validate rotation
 	switch v.rotation {
@@ -207,11 +209,7 @@ func (v *Display) updateRect(x, y, w, h int) {
 	// Iterate over the rectangle in logical coordinates
 	for ly := y; ly < y+h; ly++ {
 		for lx := x; lx < x+w; lx++ {
-			r, g, b, _ := v.rgbaImage.At(lx, ly).RGBA()
-			r5 := uint16(r >> (16 - 5))
-			g6 := uint16(g >> (16 - 6))
-			b5 := uint16(b >> (16 - 5))
-			pixel16 := (r5 << 11) | (g6 << 5) | b5
+			r, g, b, a := v.rgbaImage.At(lx, ly).RGBA()
 
 			// Map logical (lx, ly) to framebuffer (fbX, fbY) based on rotation
 			var fbX, fbY int
@@ -229,43 +227,25 @@ func (v *Display) updateRect(x, y, w, h int) {
 				fbY = v.fbHeight - 1 - lx
 			}
 
-			fbIdx := (fbY * v.lineLengthBytes) + (fbX * 2)
-			if fbIdx+1 < len(v.backBuffer) {
-				binary.LittleEndian.PutUint16(v.backBuffer[fbIdx:], pixel16)
+			fbIdx := (fbY * v.lineLengthBytes) + (fbX * v.bytesPerPixel)
+			if v.bpp == 16 {
+				r5 := uint16(r >> 11)
+				g6 := uint16(g >> 10)
+				b5 := uint16(b >> 11)
+				pixel16 := (r5 << 11) | (g6 << 5) | b5
+				if fbIdx+1 < len(v.pixBuffer) {
+					binary.LittleEndian.PutUint16(v.pixBuffer[fbIdx:], pixel16)
+				}
+			} else if v.bpp == 32 {
+				r8 := uint8(r >> 8)
+				g8 := uint8(g >> 8)
+				b8 := uint8(b >> 8)
+				a8 := uint8(a >> 8)
+				pixel32 := (uint32(a8) << 24) | (uint32(r8) << 16) | (uint32(g8) << 8) | uint32(b8)
+				if fbIdx+3 < len(v.pixBuffer) {
+					binary.LittleEndian.PutUint32(v.pixBuffer[fbIdx:], pixel32)
+				}
 			}
-		}
-	}
-
-	// Copy only the affected rows in the framebuffer
-	// Calculate the framebuffer bounding box based on rotation
-	var fbMinX, fbMinY, fbMaxX, fbMaxY int
-	switch v.rotation {
-	case Rotation0:
-		fbMinX, fbMinY = x, y
-		fbMaxX, fbMaxY = x+w-1, y+h-1
-	case Rotation90:
-		fbMinX = v.fbWidth - 1 - (y + h - 1)
-		fbMaxX = v.fbWidth - 1 - y
-		fbMinY = x
-		fbMaxY = x + w - 1
-	case Rotation180:
-		fbMinX = v.fbWidth - 1 - (x + w - 1)
-		fbMaxX = v.fbWidth - 1 - x
-		fbMinY = v.fbHeight - 1 - (y + h - 1)
-		fbMaxY = v.fbHeight - 1 - y
-	case Rotation270:
-		fbMinX = y
-		fbMaxX = y + h - 1
-		fbMinY = v.fbHeight - 1 - (x + w - 1)
-		fbMaxY = v.fbHeight - 1 - x
-	}
-
-	// Copy only the affected rows
-	for fbY := fbMinY; fbY <= fbMaxY; fbY++ {
-		srcStart := fbY*v.lineLengthBytes + fbMinX*2
-		srcEnd := fbY*v.lineLengthBytes + (fbMaxX+1)*2
-		if srcStart < len(v.backBuffer) && srcEnd <= len(v.backBuffer) {
-			copy(v.pixBuffer[srcStart:srcEnd], v.backBuffer[srcStart:srcEnd])
 		}
 	}
 }

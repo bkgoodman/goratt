@@ -37,6 +37,9 @@ type Config struct {
 	// Event pipe for external event injection
 	EventPipe eventpipe.Config `yaml:"event_pipe"`
 
+	// Audio configuration for PCM playback
+	Audio AudioConfig `yaml:"audio"`
+
 	// General settings
 	ClientID     string `yaml:"client_id"`
 	Resource     string `yaml:"resource"`
@@ -52,4 +55,11 @@ type APIConfig struct {
 	CAFile   string `yaml:"ca_file"`
 	Username string `yaml:"username"`
 	Password string `yaml:"password"`
+}
+
+// AudioConfig holds audio playback settings for PCM files.
+type AudioConfig struct {
+	Format   string `yaml:"format"`   // ALSA format string, e.g., "S16_LE"
+	Rate     int    `yaml:"rate"`     // Sample rate in Hz, e.g., 44100
+	Channels int    `yaml:"channels"` // Number of channels, e.g., 1 for mono
 }

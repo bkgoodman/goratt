@@ -166,4 +166,6 @@ func (m *Manager) SetVendingAddAmount(addAmount float64)                     {}
 func (m *Manager) GetVendingAddAmount() float64                              { return 0 }
 func (m *Manager) SetVendingLastLog(lastLog int)                             {}
 func (m *Manager) GetVendingLastLog() int                                    { return 0 }
-func (m *Manager) ClearVendingSession()                                      {}
+func (m *Manager) SetStopAudioFn(fn func())                                  {}
+func (m *Manager) SetPlayAudioFn(fn func(filename string))                   {}
+func (m *Manager) PlayAudio(filename string)                                 {}

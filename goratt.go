@@ -19,6 +19,7 @@ import (
 
 	"gopkg.in/yaml.v2"
 
+	"goratt/audio"
 	"goratt/door"
 	"goratt/eventpipe"
 	"goratt/indicator"
@@ -45,6 +46,7 @@ type App struct {
 	acl                   *ACLManager
 	vending               *vending.Client
 	currentVendingSession *VendingSessionState
+	audio                 *audio.AudioManager
 	ctx                   context.Context
 	cancel                context.CancelFunc
 }
@@ -93,6 +95,8 @@ func main() {
 		cancel: cancel,
 	}
 
+	app.audio = audio.NewAudioManager(cfg.Audio.Format, cfg.Audio.Rate, cfg.Audio.Channels)
+
 	// Initialize MQTT
 	app.mqtt, err = mqtt.New(cfg.MQTT, cfg.ClientID, mqtt.Handlers{
 		OnConnect:    app.onMQTTConnect,
@@ -120,6 +124,12 @@ func main() {
 			log.Fatalf("Init display: %v", err)
 		}
 		app.display.ConnectionLost()
+
+		// Set audio stop function for screen switches
+		app.display.Manager().SetStopAudioFn(app.audio.Stop)
+
+		// Set audio play function for screens
+		app.display.Manager().SetPlayAudioFn(app.audio.PlayPCM)
 	}
 
 	// Initialize rotary encoder if configured
