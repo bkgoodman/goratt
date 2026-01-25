@@ -60,7 +60,5 @@ type APIConfig struct {
 
 // AudioConfig holds audio playback settings for PCM files.
 type AudioConfig struct {
-	Format   string `yaml:"format"`   // ALSA format string, e.g., "S16_LE"
-	Rate     int    `yaml:"rate"`     // Sample rate in Hz, e.g., 44100
-	Channels int    `yaml:"channels"` // Number of channels, e.g., 1 for mono
+	Device string `yaml:"device"` // Optional ALSA device name, defaults to "default"
 }

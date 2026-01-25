@@ -77,7 +77,7 @@ func main() {
 	}
  
 	darkroomApp := &DarkroomApp{}
-	darkroomApp.Base = app.NewBaseApp(&cfg, darkroomApp)
+	darkroomApp.Base = app.NewBaseApp(&cfg, nil, darkroomApp)
  
 	if darkroomApp.Base.Display != nil {
 		mgr := darkroomApp.Base.Display.Manager()

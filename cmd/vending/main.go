@@ -15,6 +15,7 @@ import (
 	"goratt/lib/acl"
 	"goratt/lib/app"
 	"goratt/lib/auth"
+	"goratt/lib/audio"
 	"goratt/lib/config"
 	"goratt/lib/indicator"
 	"goratt/lib/video/screen"
@@ -63,7 +64,12 @@ func main() {
 	}
  
 	vendingApp := &VendingApp{}
-	vendingApp.Base = app.NewBaseApp(&cfg, vendingApp)
+	audioParams := audio.Params{
+		Format: "S16_LE",
+		Rate: 16000,
+		Channels: 1,
+	}
+	vendingApp.Base = app.NewBaseApp(&cfg, &audioParams, vendingApp)
  
 	if vendingApp.Base.Display != nil {
 		mgr := vendingApp.Base.Display.Manager()

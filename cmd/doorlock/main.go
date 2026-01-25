@@ -55,7 +55,7 @@ func main() {
 	}
 
 	doorlockApp := &DoorlockApp{}
-	doorlockApp.Base = app.NewBaseApp(&cfg, doorlockApp)
+	doorlockApp.Base = app.NewBaseApp(&cfg, nil, doorlockApp)
 
 	if doorlockApp.Base.Display != nil {
 		mgr := doorlockApp.Base.Display.Manager()

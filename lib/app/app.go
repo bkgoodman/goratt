@@ -54,7 +54,7 @@ type BaseApp struct {
 }
  
 // NewBaseApp creates and initializes the core application components.
-func NewBaseApp(cfg *config.Config, handler Handler) *BaseApp {
+func NewBaseApp(cfg *config.Config, audioParams *audio.Params, handler Handler) *BaseApp {
 	ctx, cancel := context.WithCancel(context.Background())
  
 	app := &BaseApp{
@@ -66,7 +66,9 @@ func NewBaseApp(cfg *config.Config, handler Handler) *BaseApp {
  
 	var err error
  
-	app.Audio = audio.NewAudioManager(cfg.Audio.Format, cfg.Audio.Rate, cfg.Audio.Channels)
+	if (audioParams != nil) {
+		app.Audio = audio.NewAudioManager(*audioParams, cfg.Audio.Device)
+	}
  
 	// Initialize MQTT
 	app.MQTT, err = mqtt.New(cfg.MQTT, cfg.ClientID, mqtt.Handlers{
