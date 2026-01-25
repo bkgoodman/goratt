@@ -14,6 +14,7 @@ const (
 	EventRotaryTurn
 	EventRotaryPress
 	EventRotaryLongPress  // Rotary button held for >1s
+	EventButtonUp         // Rotary button released after long press
 	EventPin              // GPIO pin event
 	EventMQTTConnected    // MQTT broker connected/reconnected
 	EventMQTTDisconnected // MQTT broker disconnected

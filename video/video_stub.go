@@ -37,3 +37,4 @@ func (v *Display) Height() int                              { return 0 }
 func (v *Display) Manager() *screen.Manager                 { return nil }
 func (v *Display) SendEvent(event screen.Event) bool        { return false }
 func (v *Display) SetMQTTConnected(connected bool)          {}
+func (v *Display) SetBuildID(id string)                     {}

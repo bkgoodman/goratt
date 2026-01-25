@@ -258,6 +258,14 @@ func (v *Display) Idle() {
 	v.manager.SwitchTo(screen.ScreenIdle)
 }
 
+// SetBuildID sets the build identifier string.
+func (v *Display) SetBuildID(id string) {
+	if !v.initialized {
+		return
+	}
+	v.idleScreen.SetBuildID(id)
+}
+
 // Granted switches to the granted screen with member info.
 func (v *Display) Granted(member, nickname, warning string) {
 	if !v.initialized {

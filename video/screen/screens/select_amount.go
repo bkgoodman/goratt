@@ -34,6 +34,8 @@ type SelectAmountScreen struct {
 	updateInterval time.Duration
 
 	exited bool
+
+	cancelOverlay *CancelOverlay
 }
 
 // NewSelectAmountScreen creates a new select amount screen.
@@ -73,6 +75,10 @@ func (s *SelectAmountScreen) Init(mgr *screen.Manager) {
 
 	s.exited = false
 
+	// Initialize cancel overlay
+	config := DefaultCancelOverlayConfig(mgr)
+	s.cancelOverlay = NewCancelOverlay(mgr, config)
+
 	// Start timeout timer
 	s.startTimeout()
 
@@ -81,9 +87,19 @@ func (s *SelectAmountScreen) Init(mgr *screen.Manager) {
 }
 
 func (s *SelectAmountScreen) startTimeout() {
-	s.timeoutID = s.mgr.SetTimeout(s.timeoutPeriod, func(scr screen.Screen) {
-		// Timeout - go to aborted screen
-		s.mgr.SwitchTo(screen.ScreenAborted)
+	if s.timeoutID != 0 {
+		s.mgr.ClearTimeout(s.timeoutID)
+	}
+	// 28s inactivity + 2s visual cancel bar = 30s total
+	s.timeoutID = s.mgr.SetTimeout(28*time.Second, func(scr screen.Screen) {
+		// Inactivity timeout - start visual cancel countdown
+		s.cancelOverlay.Start(CancelModeTimeout, func() {
+			// Cancel completed
+			s.mgr.SwitchTo(screen.ScreenAborted)
+		}, func() {
+			// Cancel aborted - restart inactivity timeout
+			s.startTimeout()
+		})
 	})
 }
 
@@ -118,6 +134,9 @@ func (s *SelectAmountScreen) Update() {
 	s.mgr.DrawCentered("Turn knob to adjust", float64(s.mgr.Height()/2)+100, 0.9, 0.9, 0.9)
 	s.mgr.DrawCentered("Press to confirm", float64(s.mgr.Height()/2)+130, 0.9, 0.9, 0.9)
 
+	// Draw cancel overlay if active
+	s.cancelOverlay.Draw()
+
 	s.mgr.Flush()
 }
 
@@ -138,6 +157,11 @@ func (s *SelectAmountScreen) updateAmountDisplay() {
 }
 
 func (s *SelectAmountScreen) HandleEvent(event screen.Event) bool {
+	// If cancel overlay is active, let it handle interaction
+	if s.cancelOverlay.HandleEvent(event) {
+		return true
+	}
+
 	switch event.Type {
 	case screen.EventRotaryTurn:
 		if rotary := event.Rotary(); rotary != nil {
@@ -169,9 +193,6 @@ func (s *SelectAmountScreen) HandleEvent(event screen.Event) bool {
 			}
 
 			// Reset timeout
-			if s.timeoutID != 0 {
-				s.mgr.ClearTimeout(s.timeoutID)
-			}
 			s.startTimeout()
 
 			return true
@@ -183,8 +204,10 @@ func (s *SelectAmountScreen) HandleEvent(event screen.Event) bool {
 		return true
 
 	case screen.EventRotaryLongPress:
-		// Long press - abort
-		s.mgr.SwitchTo(screen.ScreenAborted)
+		// Long press - start cancel sequence
+		s.cancelOverlay.Start(CancelModeHold, func() {
+			s.mgr.SwitchTo(screen.ScreenAborted)
+		}, nil)
 		return true
 	}
 	return false
@@ -195,6 +218,7 @@ func (s *SelectAmountScreen) Exit() {
 	s.updateTimerID = 0
 	s.pendingUpdate = false
 	s.exited = true
+	s.cancelOverlay.Stop()
 }
 
 func (s *SelectAmountScreen) Name() string {

@@ -13,6 +13,7 @@ func (s *IdleScreen) Update()                             {}
 func (s *IdleScreen) HandleEvent(event screen.Event) bool { return false }
 func (s *IdleScreen) Exit()                               {}
 func (s *IdleScreen) Name() string                        { return "Idle" }
+func (s *IdleScreen) SetBuildID(id string)                {}
 
 // GrantedScreen stub
 type GrantedScreen struct{}

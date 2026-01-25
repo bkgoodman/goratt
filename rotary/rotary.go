@@ -22,6 +22,7 @@ type Rotary struct {
 	onTurn         func(delta int)
 	onPress        func()
 	onLongPress    func()
+	onButtonUp     func()
 	btnPressTime   time.Time
 	longPressTimer *time.Timer
 	longPressFired bool
@@ -40,6 +41,7 @@ type Handlers struct {
 	OnTurn      func(delta int) // Called with +1 (CW) or -1 (CCW)
 	OnPress     func()          // Called when button pressed (short press)
 	OnLongPress func()          // Called when button held >1s
+	OnButtonUp  func()          // Called when button released (after long press)
 }
 
 // New creates a new rotary encoder handler.
@@ -61,6 +63,7 @@ func New(cfg Config, handlers Handlers) (*Rotary, error) {
 		onTurn:      handlers.OnTurn,
 		onPress:     handlers.OnPress,
 		onLongPress: handlers.OnLongPress,
+		onButtonUp:  handlers.OnButtonUp,
 	}
 
 	var err error
@@ -177,6 +180,11 @@ func (r *Rotary) handleButton(evt gpiocdev.LineEvent) {
 			if r.onPress != nil {
 				//fmt.Println("Button short press")
 				r.onPress()
+			}
+		} else if r.longPressFired {
+			// Button released after long press fired
+			if r.onButtonUp != nil {
+				r.onButtonUp()
 			}
 		}
 

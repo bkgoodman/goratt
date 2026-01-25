@@ -26,7 +26,7 @@ type EventHandler func(screen.Event)
 type EventPipe struct {
 	path    string
 	handler EventHandler
-	closed  atomic.Bool
+	closed  uint32 // Use uint32 for atomic operations (Go < 1.19)
 }
 
 // New creates a new EventPipe. Returns nil if path is empty.
@@ -58,11 +58,11 @@ func New(cfg Config, handler EventHandler) (*EventPipe, error) {
 func (ep *EventPipe) Start() {
 	log.Printf("Event pipe listening on %s", ep.path)
 
-	for !ep.closed.Load() {
+	for atomic.LoadUint32(&ep.closed) == 0 {
 		// Open pipe for read+write so we don't block waiting for a writer
 		file, err := os.OpenFile(ep.path, os.O_RDWR, 0)
 		if err != nil {
-			if ep.closed.Load() {
+			if atomic.LoadUint32(&ep.closed) != 0 {
 				return
 			}
 			log.Printf("Event pipe open error: %v", err)
@@ -81,7 +81,7 @@ func (ep *EventPipe) Start() {
 func (ep *EventPipe) readLoop(file *os.File) {
 	reader := bufio.NewReader(file)
 
-	for !ep.closed.Load() {
+	for atomic.LoadUint32(&ep.closed) == 0 {
 		// Set a short read deadline so we can check the closed flag periodically
 		if err := file.SetReadDeadline(time.Now().Add(500 * time.Millisecond)); err != nil {
 			log.Printf("Warning: failed to set read deadline: %v", err)
@@ -89,7 +89,7 @@ func (ep *EventPipe) readLoop(file *os.File) {
 
 		line, err := reader.ReadString('\n')
 		if err != nil {
-			if ep.closed.Load() {
+			if atomic.LoadUint32(&ep.closed) != 0 {
 				return
 			}
 			// Timeout is expected, just continue
@@ -120,7 +120,7 @@ func (ep *EventPipe) readLoop(file *os.File) {
 
 // Close stops the event pipe listener and removes the pipe.
 func (ep *EventPipe) Close() error {
-	ep.closed.Store(true)
+	atomic.StoreUint32(&ep.closed, 1)
 	// Give the goroutine time to notice and exit
 	time.Sleep(600 * time.Millisecond)
 	return os.Remove(ep.path)

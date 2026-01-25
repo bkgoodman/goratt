@@ -83,13 +83,19 @@ type IdleScreen struct {
 	ipBarHeight   int
 	forceShowIP   bool // Force IP display even after startup window
 	forceHideIP   bool // Force IP to hide even during startup window
+	buildID       string
 }
 
 // NewIdleScreen creates a new idle screen.
 func NewIdleScreen() *IdleScreen {
 	return &IdleScreen{
-		ipBarHeight: 24,
+		ipBarHeight: 44,
 	}
+}
+
+// SetBuildID sets the build identifier string.
+func (s *IdleScreen) SetBuildID(id string) {
+	s.buildID = id
 }
 
 // getIPAddress returns the IP address of the primary network interface (wlan or eth).
@@ -212,14 +218,23 @@ func (s *IdleScreen) drawIPBar() {
 	// White bar at top
 	s.mgr.FillRect(0, 0, s.mgr.Width(), s.ipBarHeight, 1, 1, 1)
 
-	// Black text with IP address
+	// Black text
+	s.mgr.DC().SetRGB(0, 0, 0)
 	s.mgr.SetFontSize(16)
+
+	// First line: IP address
 	ip := s.lastIP
 	if ip == "" {
 		ip = "No IP"
 	}
-	s.mgr.DC().SetRGB(0, 0, 0)
-	s.mgr.DC().DrawStringAnchored(ip, float64(s.mgr.Width()/2), float64(s.ipBarHeight/2), 0.5, 0.5)
+	s.mgr.DC().DrawStringAnchored(ip, float64(s.mgr.Width()/2), 12, 0.5, 0.5)
+
+	// Second line: Build ID
+	build := s.buildID
+	if build == "" {
+		build = "Unknown Build"
+	}
+	s.mgr.DC().DrawStringAnchored(build, float64(s.mgr.Width()/2), 32, 0.5, 0.5)
 }
 
 func (s *IdleScreen) Update() {

@@ -35,6 +35,8 @@ type InsufficientFundsScreen struct {
 	updateHeight int
 
 	exited bool
+
+	cancelOverlay *CancelOverlay
 }
 
 // NewInsufficientFundsScreen creates a new insufficient funds screen.
@@ -74,6 +76,10 @@ func (s *InsufficientFundsScreen) Init(mgr *screen.Manager) {
 
 	s.exited = false
 
+	// Initialize cancel overlay
+	config := DefaultCancelOverlayConfig(mgr)
+	s.cancelOverlay = NewCancelOverlay(mgr, config)
+
 	// Start timeout timer
 	s.startTimeout()
 
@@ -82,8 +88,19 @@ func (s *InsufficientFundsScreen) Init(mgr *screen.Manager) {
 }
 
 func (s *InsufficientFundsScreen) startTimeout() {
-	s.timeoutID = s.mgr.SetTimeout(s.timeoutPeriod, func(scr screen.Screen) {
-		s.mgr.SwitchTo(screen.ScreenAborted)
+	if s.timeoutID != 0 {
+		s.mgr.ClearTimeout(s.timeoutID)
+	}
+	// 28s inactivity + 2s visual cancel bar = 30s total
+	s.timeoutID = s.mgr.SetTimeout(28*time.Second, func(scr screen.Screen) {
+		// Inactivity timeout - start visual cancel countdown
+		s.cancelOverlay.Start(CancelModeTimeout, func() {
+			// Cancel completed
+			s.mgr.SwitchTo(screen.ScreenAborted)
+		}, func() {
+			// Cancel aborted - restart inactivity timeout
+			s.startTimeout()
+		})
 	})
 }
 
@@ -101,6 +118,9 @@ func (s *InsufficientFundsScreen) Update() {
 	s.mgr.SetFontSize(18)
 	s.mgr.DrawCentered("Turn knob to adjust", float64(s.mgr.Height()/2)+110, 0.9, 0.9, 0.9)
 	s.mgr.DrawCentered("Press to confirm", float64(s.mgr.Height()/2)+135, 0.9, 0.9, 0.9)
+
+	// Draw cancel overlay if active
+	s.cancelOverlay.Draw()
 
 	s.mgr.Flush()
 }
@@ -145,6 +165,11 @@ func (s *InsufficientFundsScreen) updateAmountsDisplay() {
 }
 
 func (s *InsufficientFundsScreen) HandleEvent(event screen.Event) bool {
+	// If cancel overlay is active, let it handle interaction
+	if s.cancelOverlay.HandleEvent(event) {
+		return true
+	}
+
 	switch event.Type {
 	case screen.EventRotaryTurn:
 		if rotary := event.Rotary(); rotary != nil {
@@ -175,9 +200,6 @@ func (s *InsufficientFundsScreen) HandleEvent(event screen.Event) bool {
 			}
 
 			// Reset timeout
-			if s.timeoutID != 0 {
-				s.mgr.ClearTimeout(s.timeoutID)
-			}
 			s.startTimeout()
 
 			return true
@@ -189,8 +211,10 @@ func (s *InsufficientFundsScreen) HandleEvent(event screen.Event) bool {
 		return true
 
 	case screen.EventRotaryLongPress:
-		// Long press - abort
-		s.mgr.SwitchTo(screen.ScreenAborted)
+		// Long-press - start cancel sequence
+		s.cancelOverlay.Start(CancelModeHold, func() {
+			s.mgr.SwitchTo(screen.ScreenAborted)
+		}, nil)
 		return true
 	}
 	return false
@@ -201,6 +225,7 @@ func (s *InsufficientFundsScreen) Exit() {
 	s.updateTimerID = 0
 	s.pendingUpdate = false
 	s.exited = true
+	s.cancelOverlay.Stop()
 }
 
 func (s *InsufficientFundsScreen) Name() string {

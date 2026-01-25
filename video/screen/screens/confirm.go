@@ -11,13 +11,14 @@ import (
 
 // ConfirmScreen displays payment confirmation and waits for final confirmation.
 type ConfirmScreen struct {
-	mgr       *screen.Manager
-	member    string
-	nickname  string
-	amount    float64
-	balance   float64
-	addAmount float64
-	timeoutID screen.TimerID
+	mgr           *screen.Manager
+	member        string
+	nickname      string
+	amount        float64
+	balance       float64
+	addAmount     float64
+	timeoutID     screen.TimerID
+	cancelOverlay *CancelOverlay
 }
 
 // NewConfirmScreen creates a new confirm screen.
@@ -42,15 +43,31 @@ func (s *ConfirmScreen) Init(mgr *screen.Manager) {
 		return
 	}
 
-	// Only start timeout if we're staying on this screen
-	s.timeoutID = mgr.SetTimeout(10*time.Second, func(scr screen.Screen) {
-		// Timeout - abort
-		mgr.SwitchTo(screen.ScreenAborted)
-	})
+	// Initialize cancel overlay
+	config := DefaultCancelOverlayConfig(mgr)
+	s.cancelOverlay = NewCancelOverlay(mgr, config)
+
+	// Start inactivity timeout
+	s.resetTimeout()
 
 	// Play purchase audio
 	s.mgr.PlayAudio("confirm_16.pcm")
+}
 
+func (s *ConfirmScreen) resetTimeout() {
+	if s.timeoutID != 0 {
+		s.mgr.ClearTimeout(s.timeoutID)
+	}
+	s.timeoutID = s.mgr.SetTimeout(8*time.Second, func(scr screen.Screen) {
+		// Inactivity timeout - start visual cancel countdown
+		s.cancelOverlay.Start(CancelModeTimeout, func() {
+			// Cancel completed
+			s.mgr.SwitchTo(screen.ScreenAborted)
+		}, func() {
+			// Cancel aborted - restart inactivity timeout
+			s.resetTimeout()
+		})
+	})
 }
 
 func (s *ConfirmScreen) Update() {
@@ -100,19 +117,33 @@ func (s *ConfirmScreen) Update() {
 	s.mgr.DrawCentered("Press to complete", float64(s.mgr.Height()/2)+95, 0.9, 0.9, 0.9)
 	s.mgr.DrawCentered("Hold to cancel", float64(s.mgr.Height()/2)+120, 0.9, 0.9, 0.9)
 
+	// Draw cancel overlay if active
+	s.cancelOverlay.Draw()
+
 	s.mgr.Flush()
 }
 
 func (s *ConfirmScreen) HandleEvent(event screen.Event) bool {
+	// If cancel overlay is active, let it handle interaction
+	if s.cancelOverlay.HandleEvent(event) {
+		return true
+	}
+
 	switch event.Type {
+	case screen.EventRotaryTurn:
+		s.resetTimeout()
+		return true
+
 	case screen.EventRotaryPress:
 		// Short press - go to processing screen
 		s.mgr.SwitchTo(screen.ScreenProcessing)
 		return true
 
 	case screen.EventRotaryLongPress:
-		// Long press - abort
-		s.mgr.SwitchTo(screen.ScreenAborted)
+		// Long press - start cancel sequence
+		s.cancelOverlay.Start(CancelModeHold, func() {
+			s.mgr.SwitchTo(screen.ScreenAborted)
+		}, nil)
 		return true
 	}
 	return false
@@ -120,6 +151,7 @@ func (s *ConfirmScreen) HandleEvent(event screen.Event) bool {
 
 func (s *ConfirmScreen) Exit() {
 	s.timeoutID = 0
+	s.cancelOverlay.Stop()
 }
 
 func (s *ConfirmScreen) Name() string {

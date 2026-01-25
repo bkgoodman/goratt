@@ -22,6 +22,7 @@ type Handlers struct {
 	OnTurn      func(delta int)
 	OnPress     func()
 	OnLongPress func()
+	OnButtonUp  func()
 }
 
 // New returns an error on non-linux platforms.

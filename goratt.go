@@ -123,6 +123,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Init display: %v", err)
 		}
+		app.display.SetBuildID(myBuild)
 		app.display.ConnectionLost()
 
 		// Set audio stop function for screen switches
@@ -137,6 +138,7 @@ func main() {
 		OnTurn:      app.SendRotaryEvent,
 		OnPress:     app.SendRotaryPressEvent,
 		OnLongPress: app.SendRotaryLongPressEvent,
+		OnButtonUp:  app.SendButtonUpEvent,
 	})
 	if err != nil {
 		log.Fatalf("Init rotary: %v", err)
@@ -620,6 +622,16 @@ func (app *App) SendRotaryLongPressEvent() {
 	app.display.SendEvent(screen.Event{
 		Type: screen.EventRotaryLongPress,
 		Data: screen.RotaryData{ID: screen.RotaryMain},
+	})
+}
+
+// SendButtonUpEvent sends a button released event to the current screen.
+func (app *App) SendButtonUpEvent() {
+	if app.display == nil {
+		return
+	}
+	app.display.SendEvent(screen.Event{
+		Type: screen.EventButtonUp,
 	})
 }
 
