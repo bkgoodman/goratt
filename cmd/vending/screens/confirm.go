@@ -1,12 +1,13 @@
 //go:build screen
 
-package screens
+package vendingscreens
 
 import (
 	"fmt"
 	"time"
 
-	"goratt/video/screen"
+	"goratt/lib/video/screen"
+	"goratt/lib/video/screen/screens"
 )
 
 // ConfirmScreen displays payment confirmation and waits for final confirmation.
@@ -18,7 +19,7 @@ type ConfirmScreen struct {
 	balance       float64
 	addAmount     float64
 	timeoutID     screen.TimerID
-	cancelOverlay *CancelOverlay
+	cancelOverlay *screens.CancelOverlay
 }
 
 // NewConfirmScreen creates a new confirm screen.
@@ -34,6 +35,10 @@ func (s *ConfirmScreen) Init(mgr *screen.Manager) {
 	s.balance = mgr.GetVendingBalance()
 	s.addAmount = mgr.GetVendingAddAmount()
 
+	// Initialize cancel overlay
+	config := screens.DefaultCancelOverlayConfig(mgr)
+	s.cancelOverlay = screens.NewCancelOverlay(mgr, config)
+
 	// Check if balance is sufficient
 	totalBalance := s.balance + s.addAmount
 	if s.amount > totalBalance {
@@ -42,10 +47,6 @@ func (s *ConfirmScreen) Init(mgr *screen.Manager) {
 		mgr.SwitchTo(screen.ScreenInsufficientFunds)
 		return
 	}
-
-	// Initialize cancel overlay
-	config := DefaultCancelOverlayConfig(mgr)
-	s.cancelOverlay = NewCancelOverlay(mgr, config)
 
 	// Start inactivity timeout
 	s.resetTimeout()
@@ -60,7 +61,7 @@ func (s *ConfirmScreen) resetTimeout() {
 	}
 	s.timeoutID = s.mgr.SetTimeout(8*time.Second, func(scr screen.Screen) {
 		// Inactivity timeout - start visual cancel countdown
-		s.cancelOverlay.Start(CancelModeTimeout, func() {
+		s.cancelOverlay.Start(screens.CancelModeTimeout, func() {
 			// Cancel completed
 			s.mgr.SwitchTo(screen.ScreenAborted)
 		}, func() {
@@ -100,6 +101,7 @@ func (s *ConfirmScreen) Update() {
 		remaining := totalBalance - s.amount
 		s.mgr.SetFontSize(20)
 		s.mgr.DrawCentered(fmt.Sprintf("New Balance: $%.2f", remaining), centerY+55, 0.8, 1, 0.8)
+		s.mgr.DrawCentered("I consent to charge my card on-file", float64(s.mgr.Height()/2)+155, 0.9, 0.9, 0.9)
 	} else {
 		// Just purchase, no add
 		s.mgr.SetFontSize(64)
@@ -141,7 +143,7 @@ func (s *ConfirmScreen) HandleEvent(event screen.Event) bool {
 
 	case screen.EventRotaryLongPress:
 		// Long press - start cancel sequence
-		s.cancelOverlay.Start(CancelModeHold, func() {
+		s.cancelOverlay.Start(screens.CancelModeHold, func() {
 			s.mgr.SwitchTo(screen.ScreenAborted)
 		}, nil)
 		return true
@@ -151,7 +153,9 @@ func (s *ConfirmScreen) HandleEvent(event screen.Event) bool {
 
 func (s *ConfirmScreen) Exit() {
 	s.timeoutID = 0
-	s.cancelOverlay.Stop()
+	if s.cancelOverlay != nil {
+		s.cancelOverlay.Stop()
+	}
 }
 
 func (s *ConfirmScreen) Name() string {

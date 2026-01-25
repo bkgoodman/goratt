@@ -134,6 +134,8 @@ const (
 	ScreenProcessing
 	ScreenSuccess
 	ScreenPaymentFailed
+	ScreenRoomInUse
+	ScreenSafeLight
 )
 
 // TimerID uniquely identifies a timer.

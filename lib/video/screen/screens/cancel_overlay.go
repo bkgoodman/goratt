@@ -7,7 +7,7 @@ import (
 	"image/draw"
 	"time"
 
-	"goratt/video/screen"
+	"goratt/lib/video/screen"
 )
 
 // CancelMode represents how the cancel overlay was triggered.
@@ -24,7 +24,8 @@ const (
 type CancelOverlayConfig struct {
 	BarY            int           // Y position of the overlay (top of the bar area)
 	BarHeight       int           // Total height of overlay area
-	Duration        time.Duration // Cancel countdown duration
+	DurationHold    time.Duration // Cancel countdown duration for hold mode
+	DurationTimeout time.Duration // Cancel countdown duration for timeout mode
 	Title           string        // e.g. "Canceling"
 	HelpTextHold    string        // e.g. "Release to abort" (for hold mode)
 	HelpTextTimeout string        // e.g. "Press button to abort" (for timeout mode)
@@ -35,7 +36,8 @@ func DefaultCancelOverlayConfig(mgr *screen.Manager) CancelOverlayConfig {
 	return CancelOverlayConfig{
 		BarY:            mgr.Height() - 150, // Moved up
 		BarHeight:       140,                // Taller for more whitespace
-		Duration:        2 * time.Second,
+		DurationHold:    2 * time.Second,
+		DurationTimeout: 10 * time.Second, // Long timeout for inactivity
 		Title:           "Canceling",
 		HelpTextHold:    "Release to abort",
 		HelpTextTimeout: "Press button to abort",
@@ -54,6 +56,7 @@ type CancelOverlay struct {
 	active     bool
 	onComplete func()
 	onAbort    func()
+	duration   time.Duration // Current active duration
 
 	// For micro dirty-rect updates - only update the changed portion of progress bar
 	barX          int // Left edge of progress bar
@@ -61,7 +64,7 @@ type CancelOverlay struct {
 	progBarY      int // Y position of the progress bar itself
 	progBarH      int // Height of progress bar
 	lastProgressX int // Last X position we drew to (for incremental updates)
- 
+
 	// Background backup for restoration
 	backup *image.RGBA
 }
@@ -91,6 +94,11 @@ func NewCancelOverlay(mgr *screen.Manager, config CancelOverlayConfig) *CancelOv
 // Start begins the cancel countdown.
 func (c *CancelOverlay) Start(mode CancelMode, onComplete, onAbort func()) {
 	c.mode = mode
+	if mode == CancelModeTimeout {
+		c.duration = c.config.DurationTimeout
+	} else {
+		c.duration = c.config.DurationHold
+	}
 	c.startTime = time.Now()
 	c.progress = 0.0
 	c.active = true
@@ -123,7 +131,7 @@ func (c *CancelOverlay) scheduleNextFrame() {
 
 		// Calculate progress
 		elapsed := time.Since(c.startTime)
-		c.progress = float64(elapsed) / float64(c.config.Duration)
+		c.progress = float64(elapsed) / float64(c.duration)
 
 		if c.progress >= 1.0 {
 			// Complete
@@ -187,17 +195,17 @@ func (c *CancelOverlay) Abort() {
 	if c.onAbort != nil {
 		c.onAbort()
 	}
- 
+
 	// Restore background
 	c.restoreBackground()
 }
- 
+
 // restoreBackground restores the backed-up pixels to the screen.
 func (c *CancelOverlay) restoreBackground() {
 	if c.backup == nil {
 		return
 	}
- 
+
 	if rgba, ok := c.mgr.DC().Image().(*image.RGBA); ok {
 		rect := c.backup.Bounds()
 		draw.Draw(rgba, rect, c.backup, rect.Min, draw.Src)

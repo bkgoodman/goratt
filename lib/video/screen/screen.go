@@ -149,4 +149,6 @@ const (
 	ScreenProcessing
 	ScreenSuccess
 	ScreenPaymentFailed
+	ScreenRoomInUse
+	ScreenSafeLight
 )

@@ -2,7 +2,7 @@
 
 package screens
 
-import "goratt/video/screen"
+import "goratt/lib/video/screen"
 
 // ConnectionLostScreen displays the connection lost state.
 type ConnectionLostScreen struct {

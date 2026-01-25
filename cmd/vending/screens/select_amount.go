@@ -1,12 +1,14 @@
 //go:build screen
 
-package screens
+package vendingscreens
 
 import (
 	"fmt"
 	"time"
+	"strings"
 
-	"goratt/video/screen"
+	"goratt/lib/video/screen"
+	"goratt/lib/video/screen/screens"
 )
 
 // SelectAmountScreen allows user to select payment amount with rotary encoder.
@@ -35,7 +37,7 @@ type SelectAmountScreen struct {
 
 	exited bool
 
-	cancelOverlay *CancelOverlay
+	cancelOverlay *screens.CancelOverlay
 }
 
 // NewSelectAmountScreen creates a new select amount screen.
@@ -76,8 +78,8 @@ func (s *SelectAmountScreen) Init(mgr *screen.Manager) {
 	s.exited = false
 
 	// Initialize cancel overlay
-	config := DefaultCancelOverlayConfig(mgr)
-	s.cancelOverlay = NewCancelOverlay(mgr, config)
+	config := screens.DefaultCancelOverlayConfig(mgr)
+	s.cancelOverlay = screens.NewCancelOverlay(mgr, config)
 
 	// Start timeout timer
 	s.startTimeout()
@@ -93,7 +95,7 @@ func (s *SelectAmountScreen) startTimeout() {
 	// 28s inactivity + 2s visual cancel bar = 30s total
 	s.timeoutID = s.mgr.SetTimeout(28*time.Second, func(scr screen.Screen) {
 		// Inactivity timeout - start visual cancel countdown
-		s.cancelOverlay.Start(CancelModeTimeout, func() {
+		s.cancelOverlay.Start(screens.CancelModeTimeout, func() {
 			// Cancel completed
 			s.mgr.SwitchTo(screen.ScreenAborted)
 		}, func() {
@@ -108,21 +110,19 @@ func (s *SelectAmountScreen) Update() {
 
 	// Title
 	s.mgr.SetFontSize(48)
-	s.mgr.DrawCentered("Select Amount", float64(s.mgr.Height()/2)-90, 1, 1, 1)
+	s.mgr.DrawCentered("Purchase Amount", float64(s.mgr.Height()/2)-90, 1, 1, 1)
 
 	// Display member name
-	displayName := s.nickname
-	if displayName == "" {
-		displayName = s.member
-	}
+	displayName := strings.ReplaceAll(s.member, ".", " ")
+	
 	if displayName != "" {
 		s.mgr.SetFontSize(28)
-		s.mgr.DrawCentered(displayName, float64(s.mgr.Height()/2)-55, 0.9, 0.9, 0.9)
+		s.mgr.DrawCentered(displayName, float64(s.mgr.Height()/2)-155, 0.9, 0.9, 0.9)
 	}
 
 	// Display current balance
 	s.mgr.SetFontSize(20)
-	s.mgr.DrawCentered(fmt.Sprintf("Balance: $%.2f", s.balance), float64(s.mgr.Height()/2)-25, 0.8, 0.8, 0.8)
+	s.mgr.DrawCentered(fmt.Sprintf("Current Balance: $%.2f", s.balance), float64(s.mgr.Height()/2)-25, 0.8, 0.8, 0.8)
 
 	// Display amount (large)
 	s.mgr.SetFontSize(72)
@@ -205,7 +205,7 @@ func (s *SelectAmountScreen) HandleEvent(event screen.Event) bool {
 
 	case screen.EventRotaryLongPress:
 		// Long press - start cancel sequence
-		s.cancelOverlay.Start(CancelModeHold, func() {
+		s.cancelOverlay.Start(screens.CancelModeHold, func() {
 			s.mgr.SwitchTo(screen.ScreenAborted)
 		}, nil)
 		return true
@@ -218,7 +218,9 @@ func (s *SelectAmountScreen) Exit() {
 	s.updateTimerID = 0
 	s.pendingUpdate = false
 	s.exited = true
-	s.cancelOverlay.Stop()
+	if s.cancelOverlay != nil {
+		s.cancelOverlay.Stop()
+	}
 }
 
 func (s *SelectAmountScreen) Name() string {

@@ -13,8 +13,7 @@ import (
 	"github.com/fogleman/gg"
 	"golang.org/x/image/draw"
 
-	"goratt/video/screen"
-	"goratt/video/screen/screens"
+	"goratt/lib/video/screen"
 )
 
 // ScreenSupported returns whether screen support is compiled in.
@@ -53,20 +52,7 @@ type Display struct {
 	rotation        Rotation
 
 	// Screen management
-	manager                 *screen.Manager
-	idleScreen              *screens.IdleScreen
-	grantedScreen           *screens.GrantedScreen
-	deniedScreen            *screens.DeniedScreen
-	openingScreen           *screens.OpeningScreen
-	connLostScreen          *screens.ConnectionLostScreen
-	shutdownScreen          *screens.ShutdownScreen
-	selectAmountScreen      *screens.SelectAmountScreen
-	confirmScreen           *screens.ConfirmScreen
-	abortedScreen           *screens.AbortedScreen
-	insufficientFundsScreen *screens.InsufficientFundsScreen
-	processingScreen        *screens.ProcessingScreen
-	successScreen           *screens.SuccessScreen
-	paymentFailedScreen     *screens.PaymentFailedScreen
+	manager *screen.Manager
 }
 
 // Video is kept for backward compatibility during transition.
@@ -137,35 +123,6 @@ func (v *Display) init() error {
 	// Initialize screen manager with logical dimensions
 	v.manager = screen.NewManager(v.dc, v.width, v.height, v.update)
 	v.manager.SetUpdateRectFn(v.updateRect)
-
-	// Create and register screens
-	v.idleScreen = screens.NewIdleScreen()
-	v.grantedScreen = screens.NewGrantedScreen()
-	v.deniedScreen = screens.NewDeniedScreen()
-	v.openingScreen = screens.NewOpeningScreen()
-	v.connLostScreen = screens.NewConnectionLostScreen()
-	v.shutdownScreen = screens.NewShutdownScreen()
-	v.selectAmountScreen = screens.NewSelectAmountScreen()
-	v.confirmScreen = screens.NewConfirmScreen()
-	v.abortedScreen = screens.NewAbortedScreen()
-	v.insufficientFundsScreen = screens.NewInsufficientFundsScreen()
-	v.processingScreen = screens.NewProcessingScreen()
-	v.successScreen = screens.NewSuccessScreen()
-	v.paymentFailedScreen = screens.NewPaymentFailedScreen()
-
-	v.manager.Register(screen.ScreenIdle, v.idleScreen)
-	v.manager.Register(screen.ScreenGranted, v.grantedScreen)
-	v.manager.Register(screen.ScreenDenied, v.deniedScreen)
-	v.manager.Register(screen.ScreenOpening, v.openingScreen)
-	v.manager.Register(screen.ScreenConnectionLost, v.connLostScreen)
-	v.manager.Register(screen.ScreenShutdown, v.shutdownScreen)
-	v.manager.Register(screen.ScreenSelectAmount, v.selectAmountScreen)
-	v.manager.Register(screen.ScreenConfirm, v.confirmScreen)
-	v.manager.Register(screen.ScreenAborted, v.abortedScreen)
-	v.manager.Register(screen.ScreenInsufficientFunds, v.insufficientFundsScreen)
-	v.manager.Register(screen.ScreenProcessing, v.processingScreen)
-	v.manager.Register(screen.ScreenSuccess, v.successScreen)
-	v.manager.Register(screen.ScreenPaymentFailed, v.paymentFailedScreen)
 
 	v.clear()
 	return nil
@@ -250,57 +207,6 @@ func (v *Display) updateRect(x, y, w, h int) {
 	}
 }
 
-// Idle switches to the idle screen.
-func (v *Display) Idle() {
-	if !v.initialized {
-		return
-	}
-	v.manager.SwitchTo(screen.ScreenIdle)
-}
-
-// SetBuildID sets the build identifier string.
-func (v *Display) SetBuildID(id string) {
-	if !v.initialized {
-		return
-	}
-	v.idleScreen.SetBuildID(id)
-}
-
-// Granted switches to the granted screen with member info.
-func (v *Display) Granted(member, nickname, warning string) {
-	if !v.initialized {
-		return
-	}
-	v.grantedScreen.SetInfo(member, nickname, warning)
-	v.manager.SwitchTo(screen.ScreenGranted)
-}
-
-// Denied switches to the denied screen with member info.
-func (v *Display) Denied(member, nickname, warning string) {
-	if !v.initialized {
-		return
-	}
-	v.deniedScreen.SetInfo(member, nickname, warning)
-	v.manager.SwitchTo(screen.ScreenDenied)
-}
-
-// Opening switches to the opening screen with member info.
-func (v *Display) Opening(member, nickname, warning string) {
-	if !v.initialized {
-		return
-	}
-	v.openingScreen.SetInfo(member, nickname, warning)
-	v.manager.SwitchTo(screen.ScreenOpening)
-}
-
-// ConnectionLost switches to the connection lost screen.
-func (v *Display) ConnectionLost() {
-	if !v.initialized {
-		return
-	}
-	v.manager.SwitchTo(screen.ScreenConnectionLost)
-}
-
 // SetMQTTConnected updates the MQTT connection state in the manager.
 // This persists across screen switches and notifies the current screen.
 func (v *Display) SetMQTTConnected(connected bool) {
@@ -308,14 +214,6 @@ func (v *Display) SetMQTTConnected(connected bool) {
 		return
 	}
 	v.manager.SetMQTTConnected(connected)
-}
-
-// Shutdown switches to the shutdown screen.
-func (v *Display) Shutdown() {
-	if !v.initialized {
-		return
-	}
-	v.manager.SwitchTo(screen.ScreenShutdown)
 }
 
 // Release releases display resources.

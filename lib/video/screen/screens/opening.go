@@ -3,7 +3,7 @@
 package screens
 
 import (
-	"goratt/video/screen"
+	"goratt/lib/video/screen"
 	"time"
 )
 
@@ -37,7 +37,7 @@ func (s *OpeningScreen) Init(mgr *screen.Manager) {
 	s.mgr = mgr
 
 	// Spinner position - centered below text content
-	s.spinnerX = (mgr.Width() - spinnerSize) / 2
+	s.spinnerX = (mgr.Width() - SpinnerSize()) / 2
 	s.spinnerY = mgr.Height() - 60 // Near bottom of screen
 
 	// Start spinner animation
@@ -69,7 +69,7 @@ func (s *OpeningScreen) Update() {
 	}
 
 	// Draw spinner
-	s.mgr.DC().DrawImage(spinnerFrames[s.spinnerFrame], s.spinnerX, s.spinnerY)
+	s.mgr.DC().DrawImage(SpinnerFrames()[s.spinnerFrame], s.spinnerX, s.spinnerY)
 
 	s.mgr.Flush()
 }
@@ -81,7 +81,7 @@ func (s *OpeningScreen) startSpinnerAnimation() {
 		if s.spinnerTimerID == 0 {
 			return
 		}
-		s.spinnerFrame = (s.spinnerFrame + 1) % len(spinnerFrames)
+		s.spinnerFrame = (s.spinnerFrame + 1) % len(SpinnerFrames())
 		s.updateSpinner()
 		s.startSpinnerAnimation() // Schedule next frame
 	})
@@ -89,8 +89,8 @@ func (s *OpeningScreen) startSpinnerAnimation() {
 
 // updateSpinner does a partial update of just the spinner area
 func (s *OpeningScreen) updateSpinner() {
-	s.mgr.DC().DrawImage(spinnerFrames[s.spinnerFrame], s.spinnerX, s.spinnerY)
-	s.mgr.FlushRect(s.spinnerX, s.spinnerY, spinnerSize, spinnerSize)
+	s.mgr.DC().DrawImage(SpinnerFrames()[s.spinnerFrame], s.spinnerX, s.spinnerY)
+	s.mgr.FlushRect(s.spinnerX, s.spinnerY, SpinnerSize(), SpinnerSize())
 }
 
 func (s *OpeningScreen) HandleEvent(event screen.Event) bool {

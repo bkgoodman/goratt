@@ -1,12 +1,13 @@
 //go:build screen
 
-package screens
+package vendingscreens
 
 import (
 	"time"
 
-	"goratt/vending"
-	"goratt/video/screen"
+	"goratt/cmd/vending/vending"
+	"goratt/lib/video/screen"
+	"goratt/lib/video/screen/screens"
 )
 
 // ProcessingScreen shows a spinner while processing payment.
@@ -29,8 +30,8 @@ func (s *ProcessingScreen) Init(mgr *screen.Manager) {
 	s.spinnerFrame = 0
 
 	// Position spinner below text
-	s.spinnerX = (mgr.Width() - spinnerSize) / 2
-	s.spinnerY = mgr.Height()/2 + 20
+	s.spinnerX = (mgr.Width() - screens.SpinnerSize()) / 2
+	s.spinnerY = mgr.Height()/2 + 40
 
 	// Start spinner animation
 	s.startSpinnerAnimation()
@@ -50,8 +51,8 @@ func (s *ProcessingScreen) Init(mgr *screen.Manager) {
 		}
 
 		// Clear spinner area completely to prevent any artifacts
-		s.mgr.FillRect(s.spinnerX, s.spinnerY, spinnerSize, spinnerSize, 0, 0.4, 0.6)
-		s.mgr.FlushRect(s.spinnerX, s.spinnerY, spinnerSize, spinnerSize)
+		s.mgr.FillRect(s.spinnerX, s.spinnerY, screens.SpinnerSize(), screens.SpinnerSize(), 0, 0.4, 0.6)
+		s.mgr.FlushRect(s.spinnerX, s.spinnerY, screens.SpinnerSize(), screens.SpinnerSize())
 
 		// Small delay to ensure framebuffer is updated before screen switch
 		time.Sleep(50 * time.Millisecond)
@@ -75,7 +76,7 @@ func (s *ProcessingScreen) startSpinnerAnimation() {
 		if s.spinnerTimerID == 0 {
 			return
 		}
-		s.spinnerFrame = (s.spinnerFrame + 1) % len(spinnerFrames)
+		s.spinnerFrame = (s.spinnerFrame + 1) % len(screens.SpinnerFrames())
 		s.updateSpinner()
 		s.startSpinnerAnimation()
 	})
@@ -99,8 +100,8 @@ func (s *ProcessingScreen) Update() {
 }
 
 func (s *ProcessingScreen) drawSpinner() {
-	if s.spinnerFrame < len(spinnerFrames) {
-		frame := spinnerFrames[s.spinnerFrame]
+	if s.spinnerFrame < len(screens.SpinnerFrames()) {
+		frame := screens.SpinnerFrames()[s.spinnerFrame]
 		s.mgr.DC().DrawImage(frame, s.spinnerX, s.spinnerY)
 	}
 }
@@ -108,14 +109,14 @@ func (s *ProcessingScreen) drawSpinner() {
 func (s *ProcessingScreen) updateSpinner() {
 	// Clear spinner area
 	s.mgr.DC().SetRGB(0, 0.4, 0.6)
-	s.mgr.DC().DrawRectangle(float64(s.spinnerX), float64(s.spinnerY), float64(spinnerSize), float64(spinnerSize))
+	s.mgr.DC().DrawRectangle(float64(s.spinnerX), float64(s.spinnerY), float64(screens.SpinnerSize()), float64(screens.SpinnerSize()))
 	s.mgr.DC().Fill()
 
 	// Draw new frame
 	s.drawSpinner()
 
 	// Flush only spinner area
-	s.mgr.FlushRect(s.spinnerX, s.spinnerY, spinnerSize, spinnerSize)
+	s.mgr.FlushRect(s.spinnerX, s.spinnerY, screens.SpinnerSize(), screens.SpinnerSize())
 }
 
 func (s *ProcessingScreen) HandleEvent(event screen.Event) bool {
@@ -129,7 +130,7 @@ func (s *ProcessingScreen) Exit() {
 	s.spinnerTimerID = 0
 
 	// Clear spinner area to prevent artifacts
-	s.mgr.FillRect(s.spinnerX, s.spinnerY, spinnerSize, spinnerSize, 0, 0.4, 0.6)
+	s.mgr.FillRect(s.spinnerX, s.spinnerY, screens.SpinnerSize(), screens.SpinnerSize(), 0, 0.4, 0.6)
 }
 
 func (s *ProcessingScreen) Name() string {

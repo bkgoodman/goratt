@@ -1,718 +1,254 @@
 package main
-
+ 
 import (
-	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"crypto/subtle"
-	"encoding/base64"
-	"encoding/binary"
-	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
-
+ 
 	"gopkg.in/yaml.v2"
-
-	"goratt/audio"
-	"goratt/door"
-	"goratt/eventpipe"
-	"goratt/indicator"
-	"goratt/mqtt"
-	"goratt/reader"
-	"goratt/rotary"
-	"goratt/vending"
-	"goratt/video"
-	"goratt/video/screen"
+ 
+	vendingscreens "goratt/cmd/vending/screens"
+	"goratt/cmd/vending/vending"
+	"goratt/lib/acl"
+	"goratt/lib/app"
+	"goratt/lib/auth"
+	"goratt/lib/config"
+	"goratt/lib/indicator"
+	"goratt/lib/video/screen"
 )
-
+ 
 var myBuild string
-
-// App holds the application state and dependencies.
-type App struct {
-	cfg                   *Config
-	mqtt                  *mqtt.Client
-	reader                reader.TagReader
-	door                  door.DoorOpener
-	indicator             indicator.Indicator
-	display               *video.Display
-	rotary                *rotary.Rotary
-	eventPipe             *eventpipe.EventPipe
-	acl                   *ACLManager
-	vending               *vending.Client
+ 
+type VendingApp struct {
+	Base                  *app.BaseApp
+	vendingClient         *vending.Client
 	currentVendingSession *VendingSessionState
-	audio                 *audio.AudioManager
-	ctx                   context.Context
-	cancel                context.CancelFunc
+	// Vending specific screens
+	deniedScreen            *vendingscreens.VendingDeniedScreen
+	selectAmountScreen      *vendingscreens.SelectAmountScreen
+	confirmScreen           *vendingscreens.ConfirmScreen
+	abortedScreen           *vendingscreens.AbortedScreen
+	insufficientFundsScreen *vendingscreens.InsufficientFundsScreen
+	processingScreen        *vendingscreens.ProcessingScreen
+	successScreen           *vendingscreens.SuccessScreen
+	paymentFailedScreen     *vendingscreens.PaymentFailedScreen
 }
-
-// OpenRequest represents a remote open request.
+ 
 type OpenRequest struct {
 	Member    string `json:"member"`
 	ToolName  string `json:"tool"`
 	Timestamp uint64 `json:"timestamp"`
 	Signature string `json:"signature"`
 }
-
+ 
 func main() {
-	fmt.Printf("goratt build %s\n", myBuild)
-
+	fmt.Printf("GoRATT Vending build %s\n", myBuild)
+ 
 	openflag := flag.Bool("holdopen", false, "Hold door open indefinitely")
 	cfgfile := flag.String("cfg", "goratt.cfg", "Config file")
 	flag.Parse()
-
-	// Load configuration
+ 
 	f, err := os.Open(*cfgfile)
 	if err != nil {
 		log.Fatalf("Open config: %v", err)
 	}
-	defer func() {
-		if err := f.Close(); err != nil {
-			log.Printf("Warning: failed to close config file: %v", err)
-		}
-	}()
-
-	var cfg Config
+	defer f.Close()
+ 
+	var cfg config.Config
 	if err := yaml.NewDecoder(f).Decode(&cfg); err != nil {
 		log.Fatalf("Decode config: %v", err)
 	}
-
-	if cfg.ClientID == "" {
-		log.Fatal("client_id missing in config file")
+ 
+	vendingApp := &VendingApp{}
+	vendingApp.Base = app.NewBaseApp(&cfg, vendingApp)
+ 
+	if vendingApp.Base.Display != nil {
+		mgr := vendingApp.Base.Display.Manager()
+ 
+		// Local custom screens
+		idle := vendingscreens.NewVendingIdleScreen()
+		idle.SetBuildID(myBuild)
+		vendingApp.deniedScreen = vendingscreens.NewVendingDeniedScreen()
+		vendingApp.selectAmountScreen = vendingscreens.NewSelectAmountScreen()
+		vendingApp.confirmScreen = vendingscreens.NewConfirmScreen()
+		vendingApp.abortedScreen = vendingscreens.NewAbortedScreen()
+		vendingApp.insufficientFundsScreen = vendingscreens.NewInsufficientFundsScreen()
+		vendingApp.processingScreen = vendingscreens.NewProcessingScreen()
+		vendingApp.successScreen = vendingscreens.NewSuccessScreen()
+		vendingApp.paymentFailedScreen = vendingscreens.NewPaymentFailedScreen()
+ 
+		mgr.Register(screen.ScreenIdle, idle)
+		mgr.Register(screen.ScreenDenied, vendingApp.deniedScreen)
+		mgr.Register(screen.ScreenSelectAmount, vendingApp.selectAmountScreen)
+		mgr.Register(screen.ScreenConfirm, vendingApp.confirmScreen)
+		mgr.Register(screen.ScreenAborted, vendingApp.abortedScreen)
+		mgr.Register(screen.ScreenInsufficientFunds, vendingApp.insufficientFundsScreen)
+		mgr.Register(screen.ScreenProcessing, vendingApp.processingScreen)
+		mgr.Register(screen.ScreenSuccess, vendingApp.successScreen)
+		mgr.Register(screen.ScreenPaymentFailed, vendingApp.paymentFailedScreen)
 	}
-
-	// Create application context
-	ctx, cancel := context.WithCancel(context.Background())
-
-	app := &App{
-		cfg:    &cfg,
-		ctx:    ctx,
-		cancel: cancel,
-	}
-
-	app.audio = audio.NewAudioManager(cfg.Audio.Format, cfg.Audio.Rate, cfg.Audio.Channels)
-
-	// Initialize MQTT
-	app.mqtt, err = mqtt.New(cfg.MQTT, cfg.ClientID, mqtt.Handlers{
-		OnConnect:    app.onMQTTConnect,
-		OnDisconnect: app.onMQTTDisconnect,
-		OnMessage:    app.onMQTTMessage,
-	})
-	if err != nil {
-		log.Fatalf("Init MQTT: %v", err)
-	}
-
-	// Initialize indicator
-	app.indicator, err = indicator.New(cfg.Indicator)
-	if err != nil {
-		log.Fatalf("Init indicator: %v", err)
-	}
-	app.indicator.ConnectionLost() // Start with connection lost state
-
-	// Initialize display if enabled
-	if cfg.VideoEnabled {
-		if !video.ScreenSupported() {
-			log.Fatalf("Video enabled but screen support not compiled in")
-		}
-		app.display, err = video.New(cfg.Video)
-		if err != nil {
-			log.Fatalf("Init display: %v", err)
-		}
-		app.display.SetBuildID(myBuild)
-		app.display.ConnectionLost()
-
-		// Set audio stop function for screen switches
-		app.display.Manager().SetStopAudioFn(app.audio.Stop)
-
-		// Set audio play function for screens
-		app.display.Manager().SetPlayAudioFn(app.audio.PlayPCM)
-	}
-
-	// Initialize rotary encoder if configured
-	app.rotary, err = rotary.New(cfg.Rotary, rotary.Handlers{
-		OnTurn:      app.SendRotaryEvent,
-		OnPress:     app.SendRotaryPressEvent,
-		OnLongPress: app.SendRotaryLongPressEvent,
-		OnButtonUp:  app.SendButtonUpEvent,
-	})
-	if err != nil {
-		log.Fatalf("Init rotary: %v", err)
-	}
-	if app.rotary != nil {
-		log.Printf("Rotary encoder initialized (CLK=%d, DT=%d, BTN=%d)",
-			cfg.Rotary.CLKPin, cfg.Rotary.DTPin, cfg.Rotary.ButtonPin)
-	}
-
-	// Initialize door opener
-	app.door, err = door.New(cfg.Door)
-	if err != nil {
-		log.Fatalf("Init door: %v", err)
-	}
-
-	// Initialize tag reader
-	app.reader, err = reader.New(cfg.Reader)
-	if err != nil {
-		log.Fatalf("Init reader: %v", err)
-	}
-
-	// Initialize ACL manager
-	app.acl = NewACLManager(&cfg)
-	app.acl.SetUpdateCallback(func() {
-		topic := fmt.Sprintf("ratt/status/node/%s/acl/update", cfg.ClientID)
-		app.mqtt.Publish(topic, `{"status":"downloaded"}`)
-	})
-
-	// Load existing ACL from file, then fetch from API
-	if err := app.acl.LoadFromFile(); err != nil {
-		log.Printf("Warning: could not load tag file: %v", err)
-	}
-	if err := app.acl.FetchFromAPI(); err != nil {
-		log.Printf("Warning: could not fetch ACL from API: %v", err)
-	}
-
+ 
 	// Initialize vending API client
 	var mockMode bool
 	if cfg.API.URL != "" {
-		app.vending = vending.NewClient(cfg.API.URL)
+		vendingApp.vendingClient = vending.NewClient(cfg.API.URL)
 		log.Printf("Vending API client initialized: %s", cfg.API.URL)
-
-		// Set global payment processor
-		vending.SetGlobalProcessor(app)
+		vending.SetGlobalProcessor(vendingApp)
 		mockMode = false
 	} else {
 		log.Printf("Warning: no API URL configured, using mock mode")
-		// Set mock processor for testing
 		vending.SetGlobalProcessor(&vending.MockProcessor{ShouldFail: false})
 		mockMode = true
 	}
-
-	// Store mock mode flag for display
-	if app.display != nil {
-		app.display.Manager().SetMockMode(mockMode)
+ 
+	if vendingApp.Base.Display != nil {
+		vendingApp.Base.Display.Manager().SetMockMode(mockMode)
 	}
-
-	// Initialize event pipe for external event injection
-	app.eventPipe, err = eventpipe.New(cfg.EventPipe, app.handleExternalEvent)
-	if err != nil {
-		log.Fatalf("Init event pipe: %v", err)
-	}
-
-	// Handle holdopen flag
+ 
 	if *openflag {
-		app.openDoor(&indicator.AccessInfo{Member: "holdopen"})
+		vendingApp.Base.OpenDoor(&indicator.AccessInfo{Member: "holdopen"}, cfg.WaitSecs, 0, 0)
 		select {} // Block forever
 	}
-
-	// Start background goroutines
-	go func() {
-		if err := app.mqtt.Connect(); err != nil {
-			log.Printf("MQTT connect: %v", err)
-		}
-	}()
-	go app.tagListener()
-	go app.pingSender()
-	if app.eventPipe != nil {
-		go app.eventPipe.Start()
-	}
-
-	// Wait for shutdown signal
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-	<-sigCh
-
-	fmt.Println("Shutting down...")
-	cancel()
-
-	// Cleanup
-	app.mqtt.Disconnect()
-	if err := app.reader.Close(); err != nil {
-		log.Printf("Warning: failed to close reader: %v", err)
-	}
-	if err := app.door.Release(); err != nil {
-		log.Printf("Warning: failed to release door: %v", err)
-	}
-	app.indicator.Shutdown()
-	if err := app.indicator.Release(); err != nil {
-		log.Printf("Warning: failed to release indicator: %v", err)
-	}
-	if app.display != nil {
-		app.display.Shutdown()
-		if err := app.display.Release(); err != nil {
-			log.Printf("Warning: failed to release display: %v", err)
-		}
-	}
-	if app.rotary != nil {
-		if err := app.rotary.Release(); err != nil {
-			log.Printf("Warning: failed to release rotary: %v", err)
-		}
-	}
-	if app.eventPipe != nil {
-		if err := app.eventPipe.Close(); err != nil {
-			log.Printf("Warning: failed to close event pipe: %v", err)
-		}
-	}
-
-	fmt.Println("Shutdown complete")
+ 
+	vendingApp.Base.Run()
 }
-
-func (app *App) onMQTTConnect() {
-	// Subscribe to broadcast ACL update
-	if err := app.mqtt.Subscribe("ratt/control/broadcast/acl/update"); err != nil {
-		log.Printf("Subscribe error: %v", err)
-	}
-
+ 
+func (app *VendingApp) OnMQTTConnect() {
 	// Subscribe to node-specific open command
-	openTopic := fmt.Sprintf("ratt/control/node/%s/open", app.cfg.ClientID)
-	if err := app.mqtt.Subscribe(openTopic); err != nil {
+	openTopic := fmt.Sprintf("ratt/control/node/%s/open", app.Base.Cfg.ClientID)
+	if err := app.Base.MQTT.Subscribe(openTopic); err != nil {
 		log.Printf("Subscribe error: %v", err)
 	}
-
-	app.indicator.Idle()
-	if app.display != nil {
-		app.display.SetMQTTConnected(true)
-		app.display.Idle()
+}
+ 
+func (app *VendingApp) OnMQTTMessage(topic string, payload []byte) {
+	openTopic := fmt.Sprintf("ratt/control/node/%s/open", app.Base.Cfg.ClientID)
+	if topic == openTopic {
+		app.handleOpenRequest(payload)
 	}
 }
-
-func (app *App) onMQTTDisconnect() {
-	app.indicator.ConnectionLost()
-	if app.display != nil {
-		app.display.SetMQTTConnected(false)
-		app.display.ConnectionLost()
-	}
-}
-
-func (app *App) onMQTTMessage(topic string, payload []byte) {
-	// Send MQTT message event to display
-	if app.display != nil {
-		app.display.SendEvent(screen.Event{
-			Type: screen.EventMQTTMessage,
-			Data: screen.MQTTData{Topic: topic, Payload: payload},
-		})
-	}
-
-	switch topic {
-	case "ratt/control/broadcast/acl/update":
-		fmt.Println("Received ACL update message")
-		if err := app.acl.FetchFromAPI(); err != nil {
-			log.Printf("Fetch ACL: %v", err)
-		}
-
-	default:
-		// Check if it's an open command for this node
-		openTopic := fmt.Sprintf("ratt/control/node/%s/open", app.cfg.ClientID)
-		if topic == openTopic {
-			app.handleOpenRequest(payload)
-		}
-	}
-}
-
-func (app *App) handleOpenRequest(payload []byte) {
-	if app.cfg.OpenSecret == "" || app.cfg.OpenToolName == "" {
-		fmt.Println("Remote open disabled (no secret or tool name configured)")
+ 
+func (app *VendingApp) handleOpenRequest(payload []byte) {
+	if app.Base.Cfg.OpenSecret == "" || app.Base.Cfg.OpenToolName == "" {
+		log.Println("Remote open disabled (no secret or tool name configured)")
 		return
 	}
-
+ 
 	var req OpenRequest
 	if err := json.Unmarshal(payload, &req); err != nil {
 		log.Printf("Decode open request: %v", err)
 		return
 	}
-
-	if err := verifySignature(app.cfg.OpenSecret, req.Member, req.ToolName, req.Timestamp, req.Signature); err != nil {
+ 
+	if err := auth.VerifySignature(app.Base.Cfg.OpenSecret, req.Member, req.ToolName, req.Timestamp, req.Signature); err != nil {
 		log.Printf("Signature verification failed: %v", err)
 		return
 	}
-
-	if req.ToolName != app.cfg.OpenToolName {
-		log.Printf("Wrong tool name %q, expected %q", req.ToolName, app.cfg.OpenToolName)
+ 
+	if req.ToolName != app.Base.Cfg.OpenToolName {
+		log.Printf("Wrong tool name %q, expected %q", req.ToolName, app.Base.Cfg.OpenToolName)
 		return
 	}
-
+ 
 	// Check timestamp is within 5 minute window
 	ts := time.Unix(int64(req.Timestamp), 0)
-	now := time.Now()
-	if now.Before(ts.Add(-5*time.Minute)) || now.After(ts.Add(5*time.Minute)) {
+	if time.Since(ts) > 5*time.Minute || time.Until(ts) > 5*time.Minute {
 		log.Println("Open request timestamp out of range")
 		return
 	}
-
-	fmt.Printf("Remote open request from %s\n", req.Member)
-	app.publishAccess(req.Member, true)
-	app.openDoor(&indicator.AccessInfo{Member: req.Member, Allowed: true})
+ 
+	log.Printf("Remote open request from %s", req.Member)
+	app.Base.PublishAccess(req.Member, true)
+	app.Base.OpenDoor(&indicator.AccessInfo{Member: req.Member, Allowed: true}, app.Base.Cfg.WaitSecs, 0, 0)
 }
-
-func (app *App) tagListener() {
-	for {
-		select {
-		case <-app.ctx.Done():
-			return
-		default:
-		}
-
-		tagID, err := app.reader.Read(app.ctx)
-		if err != nil {
-			if err == context.Canceled {
-				return
-			}
-			log.Printf("Read tag: %v", err)
-			time.Sleep(time.Second)
-			continue
-		}
-
-		if tagID == 0 {
-			continue
-		}
-
-		fmt.Printf("Tag read: %d\n", tagID)
-		app.handleTag(tagID)
-	}
-}
-
-func (app *App) handleTag(tagID uint64) {
-	record, found := app.acl.Lookup(tagID)
-
-	// Build RFID data for event
+ 
+func (app *VendingApp) HandleTag(tagID uint64, record acl.ACLRecord, found bool) {
 	rfidData := screen.RFIDData{
-		TagID: tagID,
-		Found: found,
+		TagID:    tagID,
+		Found:    found,
+		Member:   record.Member,
+		Nickname: record.Nickname,
+		Warning:  record.Warning,
+		Allowed:  record.Allowed,
 	}
-	if found {
-		rfidData.Member = record.Member
-		rfidData.Nickname = record.Nickname
-		rfidData.Warning = record.Warning
-		rfidData.Allowed = record.Allowed
-	}
-
-	// Determine if authorized or denied
+ 
 	authorized := found && record.Allowed
-
 	var evt screen.Event
 	if authorized {
 		evt = screen.Event{Type: screen.EventAuthorized, Data: rfidData}
 	} else {
 		evt = screen.Event{Type: screen.EventDenied, Data: rfidData}
 	}
-
+ 
 	// Send event to current screen - if handled, skip default processing
-	if app.display != nil {
-		if app.display.SendEvent(evt) {
+	if app.Base.Display != nil {
+		if app.Base.Display.SendEvent(evt) {
 			return
 		}
 	}
-
-	// Default handling (access control)
-	var info *indicator.AccessInfo
-	if found {
-		info = &indicator.AccessInfo{
+ 
+	if !authorized {
+		if !found {
+			log.Printf("Tag %d not found in ACL", tagID)
+		} else {
+			log.Printf("Tag %d: member=%s denied", tagID, record.Member)
+		}
+		app.Base.Indicator.Denied(&indicator.AccessInfo{
 			Member:   record.Member,
 			Nickname: record.Nickname,
 			Warning:  record.Warning,
 			Allowed:  record.Allowed,
-		}
-	}
-
-	if !authorized {
-		if !found {
-			fmt.Printf("Tag %d not found in ACL\n", tagID)
-		} else {
-			fmt.Printf("Tag %d: member=%s denied\n", tagID, record.Member)
-		}
-		app.indicator.Denied(info)
-		if app.display != nil {
+		})
+ 
+		if app.Base.Display != nil {
 			warning := "Unknown Tag"
 			if found {
 				warning = record.Warning
 			}
-			app.display.Denied(rfidData.Member, rfidData.Nickname, warning)
-			// Screen handles its own timeout via SetTimeout, no blocking sleep needed
+			app.deniedScreen.SetInfo(rfidData.Member, rfidData.Nickname, warning)
+			app.Base.Display.Manager().SwitchTo(screen.ScreenDenied)
 		} else {
-			// No display - use blocking sleep for indicator
-			time.Sleep(3 * time.Second)
-			app.indicator.Idle()
+			go func() {
+				time.Sleep(3 * time.Second)
+				app.Base.Indicator.Idle()
+			}()
 		}
 		return
 	}
-
-	fmt.Printf("Tag %d: member=%s allowed\n", tagID, record.Member)
-
+ 
+	log.Printf("Tag %d: member=%s allowed", tagID, record.Member)
+ 
 	// Start vending session instead of opening door
-	if app.display != nil && info != nil {
-		// Query balance from API
+	if app.Base.Display != nil {
 		balance := 0.0
 		lastLog := 0
-		if app.vending != nil {
-			if resp, err := app.vending.QueryBalance(info.Member); err == nil {
+		if app.vendingClient != nil {
+			if resp, err := app.vendingClient.QueryBalance(record.Member); err == nil {
 				balance = resp.Balance
 				lastLog = resp.LastLog
-				log.Printf("Queried balance for %s: $%.2f (lastLog: %d)", info.Member, balance, lastLog)
+				log.Printf("Queried balance for %s: $%.2f (lastLog: %d)", record.Member, balance, lastLog)
 			} else {
-				log.Printf("Failed to query balance for %s: %v", info.Member, err)
-				// Continue with zero balance on API error
+				log.Printf("Failed to query balance for %s: %v", record.Member, err)
 			}
-		} else {
-			log.Printf("Vending API not available, using zero balance")
 		}
-
-		// Set vending session with member info, default amount, and balance
-		app.display.Manager().SetVendingSession(info.Member, info.Nickname, 1.00)
-		app.display.Manager().SetVendingAddAmount(0) // No add amount initially
-		// Store balance and lastLog in manager for payment processing
-		// We'll need to extend the manager to store these
-		app.startVendingSession(info.Member, info.Nickname, balance, lastLog)
-		// Switch to select amount screen
-		app.display.Manager().SwitchTo(screen.ScreenSelectAmount)
+ 
+		app.Base.Display.Manager().SetVendingSession(record.Member, record.Nickname, 1.00)
+		app.Base.Display.Manager().SetVendingAddAmount(0)
+		app.startVendingSession(record.Member, record.Nickname, balance, lastLog)
+		app.Base.Display.Manager().SwitchTo(screen.ScreenSelectAmount)
 	} else {
-		// No display - fall back to old door behavior
-		app.publishAccess(record.Member, true)
-		app.openDoor(info)
+		app.Base.PublishAccess(record.Member, true)
+		app.Base.OpenDoor(&indicator.AccessInfo{
+			Member:   record.Member,
+			Nickname: record.Nickname,
+			Warning:  record.Warning,
+			Allowed:  record.Allowed,
+		}, app.Base.Cfg.WaitSecs, 0, 0)
 	}
 }
-
-// startVendingSession initializes a vending session with balance info
-func (app *App) startVendingSession(member, nickname string, balance float64, lastLog int) {
-	// Store balance and lastLog for payment processing
-	if app.display != nil {
-		mgr := app.display.Manager()
-		mgr.SetVendingBalance(balance)
-		mgr.SetVendingLastLog(lastLog)
-		app.currentVendingSession = &VendingSessionState{
-			Member:  member,
-			Balance: balance,
-			LastLog: lastLog,
-		}
-	}
-}
-
-// VendingSessionState holds the current vending session state
-type VendingSessionState struct {
-	Member  string
-	Balance float64
-	LastLog int
-}
-
-// ProcessPayment implements the PaymentProcessor interface
-func (app *App) ProcessPayment() error {
-	if app.vending == nil {
-		return fmt.Errorf("vending API not available")
-	}
-
-	if app.currentVendingSession == nil {
-		return fmt.Errorf("no active vending session")
-	}
-
-	if app.display == nil {
-		return fmt.Errorf("no display available")
-	}
-
-	mgr := app.display.Manager()
-	member, nickname, amount := mgr.GetVendingSession()
-	balance := mgr.GetVendingBalance()
-	addAmount := mgr.GetVendingAddAmount()
-	lastLog := mgr.GetVendingLastLog()
-
-	// Create vending session for API
-	session := &vending.VendingSession{
-		Member:     member,
-		Nickname:   nickname,
-		Balance:    balance,
-		Amount:     amount,
-		AddAmount:  addAmount,
-		ServiceFee: 0.30, // $0.30 service fee (could be configurable)
-		LastLog:    lastLog,
-	}
-
-	log.Printf("Processing payment: Member=%s, Amount=$%.2f, AddAmount=$%.2f, Fee=$%.2f",
-		session.Member, session.Amount, session.AddAmount, session.ServiceFee)
-
-	// Process the payment
-	if err := app.vending.ProcessPurchase(session); err != nil {
-		log.Printf("Payment processing failed: %v", err)
-		return err
-	}
-
-	log.Printf("Payment processed successfully for %s", member)
-	return nil
-}
-
-func (app *App) openDoor(info *indicator.AccessInfo) {
-	app.indicator.Opening(info)
-	if app.display != nil && info != nil {
-		app.display.Opening(info.Member, info.Nickname, info.Warning)
-	}
-
-	if err := app.door.Open(); err != nil {
-		log.Printf("Door open: %v", err)
-	}
-
-	// Show granted screen - it will auto-dismiss via its own SetTimeout
-	app.indicator.Granted(info)
-	if app.display != nil && info != nil {
-		app.display.Granted(info.Member, info.Nickname, info.Warning)
-	}
-
-	// Wait for door hold-open duration, then close
-	time.Sleep(time.Duration(app.cfg.WaitSecs) * time.Second)
-
-	if err := app.door.Close(); err != nil {
-		log.Printf("Door close: %v", err)
-	}
-
-	// Indicator goes idle, but display is controlled by screen's own timeout
-	app.indicator.Idle()
-}
-
-func (app *App) publishAccess(member string, allowed bool) {
-	allowedInt := 0
-	if allowed {
-		allowedInt = 1
-	}
-	topic := fmt.Sprintf("ratt/status/node/%s/personality/access", app.cfg.ClientID)
-	msg := fmt.Sprintf(`{"allowed":%d,"member":"%s"}`, allowedInt, member)
-	app.mqtt.Publish(topic, msg)
-}
-
-func (app *App) pingSender() {
-	ticker := time.NewTicker(120 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-app.ctx.Done():
-			return
-		case <-ticker.C:
-			topic := fmt.Sprintf("ratt/status/node/%s/ping", app.cfg.ClientID)
-			app.mqtt.Publish(topic, `{"status":"ok"}`)
-		}
-	}
-}
-
-// SendRotaryEvent sends a rotary turn event to the current screen.
-func (app *App) SendRotaryEvent(delta int) {
-	if app.display == nil {
-		return
-	}
-	app.display.SendEvent(screen.Event{
-		Type: screen.EventRotaryTurn,
-		Data: screen.RotaryData{ID: screen.RotaryMain, Delta: delta},
-	})
-}
-
-// SendRotaryPressEvent sends a rotary button press event to the current screen.
-func (app *App) SendRotaryPressEvent() {
-	if app.display == nil {
-		return
-	}
-	app.display.SendEvent(screen.Event{
-		Type: screen.EventRotaryPress,
-		Data: screen.RotaryData{ID: screen.RotaryMain},
-	})
-}
-
-// SendRotaryLongPressEvent sends a rotary button long-press event to the current screen.
-func (app *App) SendRotaryLongPressEvent() {
-	if app.display == nil {
-		return
-	}
-	app.display.SendEvent(screen.Event{
-		Type: screen.EventRotaryLongPress,
-		Data: screen.RotaryData{ID: screen.RotaryMain},
-	})
-}
-
-// SendButtonUpEvent sends a button released event to the current screen.
-func (app *App) SendButtonUpEvent() {
-	if app.display == nil {
-		return
-	}
-	app.display.SendEvent(screen.Event{
-		Type: screen.EventButtonUp,
-	})
-}
-
-// SendPinEvent sends a GPIO pin event to the current screen.
-func (app *App) SendPinEvent(pinID screen.PinID, pressed bool) {
-	if app.display == nil {
-		return
-	}
-	app.display.SendEvent(screen.Event{
-		Type: screen.EventPin,
-		Data: screen.PinData{ID: pinID, Pressed: pressed},
-	})
-}
-
-// handleExternalEvent processes events received from the event pipe.
-func (app *App) handleExternalEvent(evt screen.Event) {
-	log.Printf("External event: type=%d", evt.Type)
-
-	switch evt.Type {
-	case screen.EventRFID:
-		// Treat as a tag swipe - run through ACL lookup
-		if rfid := evt.RFID(); rfid != nil {
-			app.handleTag(rfid.TagID)
-		}
-	case screen.EventRotaryTurn, screen.EventRotaryPress, screen.EventPin:
-		// Send directly to display
-		if app.display != nil {
-			app.display.SendEvent(evt)
-		}
-	default:
-		log.Printf("Unknown external event type: %d", evt.Type)
-	}
-}
-
-// Signature verification helpers
-
-func signOpenRequest(base64Secret, member, tool string, ts uint64) (string, string, error) {
-	secret, err := base64.StdEncoding.DecodeString(base64Secret)
-	if err != nil {
-		return "", "", fmt.Errorf("invalid base64 secret: %w", err)
-	}
-	if len(secret) == 0 {
-		return "", "", fmt.Errorf("secret cannot be empty")
-	}
-
-	msg := make([]byte, 0, len(member)+len(tool)+8)
-	msg = append(msg, []byte(member)...)
-	msg = append(msg, []byte(tool)...)
-
-	var tsBuf [8]byte
-	binary.BigEndian.PutUint64(tsBuf[:], ts)
-	msg = append(msg, tsBuf[:]...)
-
-	mac := hmac.New(sha256.New, secret)
-	mac.Write(msg)
-	sum := mac.Sum(nil)
-
-	return hex.EncodeToString(sum), base64.StdEncoding.EncodeToString(sum), nil
-}
-
-func verifySignature(base64Secret, member, tool string, ts uint64, providedSig string) error {
-	sigHex, sigBase64, err := signOpenRequest(base64Secret, member, tool, ts)
-	if err != nil {
-		return err
-	}
-
-	// Try hex
-	if decoded, err := hex.DecodeString(providedSig); err == nil {
-		expected, _ := hex.DecodeString(sigHex)
-		if subtle.ConstantTimeCompare(decoded, expected) == 1 {
-			return nil
-		}
-	}
-
-	// Try base64
-	if decoded, err := base64.StdEncoding.DecodeString(providedSig); err == nil {
-		expected, _ := base64.StdEncoding.DecodeString(sigBase64)
-		if subtle.ConstantTimeCompare(decoded, expected) == 1 {
-			return nil
-		}
-	}
-
-	return fmt.Errorf("signature verification failed")
+ 
+func (app *VendingApp) HandleExternalEvent(evt screen.Event) {
 }

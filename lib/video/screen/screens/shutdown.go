@@ -2,7 +2,7 @@
 
 package screens
 
-import "goratt/video/screen"
+import "goratt/lib/video/screen"
 
 // ShutdownScreen displays a blank/shutdown state.
 type ShutdownScreen struct {

@@ -1,40 +1,69 @@
 BUILD_VERSION := $(shell git branch --show-current)-$(shell date +%a-%b-%d-%Y+%I:%M%p)
 LDFLAGS := -ldflags="-X main.myBuild=$(BUILD_VERSION)"
-
-# Default: build all variants without screen support
-all: goratt_x86 goratt_arm goratt_arm64
-
-# Build all variants with screen support
-all-screen: goratt_x86_screen goratt_arm_screen goratt_arm64_screen
-
-# x86 builds
-goratt_x86:
-	go build -o goratt $(LDFLAGS)
-
-goratt_x86_screen:
-	go build -tags=screen -o goratt_screen $(LDFLAGS)
-
-# ARM (32-bit) builds
-goratt_arm:
-	GOARCH=arm go build -o goratt_arm $(LDFLAGS)
-
-goratt_arm_screen:
-	GOARCH=arm go build -tags=screen -o goratt_arm_screen $(LDFLAGS)
-
-# ARM64 builds
-goratt_arm64:
-	GOARCH=arm64 go build -o goratt_arm64 $(LDFLAGS)
-
-goratt_arm64_screen:
-	GOARCH=arm64 go build -tags=screen -o goratt_arm64_screen $(LDFLAGS)
-
+ 
+# Vending and Darkroom ALWAYS require screen support.
+# Doorlock can be built either with or without screen support.
+ 
+# Screen-enabled targets (for all apps)
+SCREEN_TARGETS := vending_x86_screen darkroom_x86_screen doorlock_x86_screen \
+                  vending_arm_screen  darkroom_arm_screen  doorlock_arm_screen \
+                  vending_arm64_screen darkroom_arm64_screen doorlock_arm64_screen
+ 
+# No-screen targets (Doorlock only)
+NOSCREEN_TARGETS := doorlock_x86 doorlock_arm doorlock_arm64
+ 
+all: $(NOSCREEN_TARGETS) $(SCREEN_TARGETS)
+ 
+# Architecture Groups
+x86: doorlock_x86 doorlock_x86_screen vending_x86_screen darkroom_x86_screen
+arm: doorlock_arm doorlock_arm_screen vending_arm_screen darkroom_arm_screen
+arm64: doorlock_arm64 doorlock_arm64_screen vending_arm64_screen darkroom_arm64_screen
+ 
+# --- x86 Builds ---
+doorlock_x86:
+	go build $(LDFLAGS) -o doorlock_x86 ./cmd/doorlock
+ 
+doorlock_x86_screen:
+	go build -tags=screen $(LDFLAGS) -o doorlock_x86_screen ./cmd/doorlock
+ 
+vending_x86_screen:
+	go build -tags=screen $(LDFLAGS) -o vending_x86_screen ./cmd/vending
+ 
+darkroom_x86_screen:
+	go build -tags=screen $(LDFLAGS) -o darkroom_x86_screen ./cmd/darkroom
+ 
+# --- ARM (32-bit) Builds ---
+doorlock_arm:
+	GOARCH=arm go build $(LDFLAGS) -o doorlock_arm ./cmd/doorlock
+ 
+doorlock_arm_screen:
+	GOARCH=arm go build -tags=screen $(LDFLAGS) -o doorlock_arm_screen ./cmd/doorlock
+ 
+vending_arm_screen:
+	GOARCH=arm go build -tags=screen $(LDFLAGS) -o vending_arm_screen ./cmd/vending
+ 
+darkroom_arm_screen:
+	GOARCH=arm go build -tags=screen $(LDFLAGS) -o darkroom_arm_screen ./cmd/darkroom
+ 
+# --- ARM64 Builds ---
+doorlock_arm64:
+	GOARCH=arm64 go build $(LDFLAGS) -o doorlock_arm64 ./cmd/doorlock
+ 
+doorlock_arm64_screen:
+	GOARCH=arm64 go build -tags=screen $(LDFLAGS) -o doorlock_arm64_screen ./cmd/doorlock
+ 
+vending_arm64_screen:
+	GOARCH=arm64 go build -tags=screen $(LDFLAGS) -o vending_arm64_screen ./cmd/vending
+ 
+darkroom_arm64_screen:
+	GOARCH=arm64 go build -tags=screen $(LDFLAGS) -o darkroom_arm64_screen ./cmd/darkroom
+ 
 # Build and deploy to neopi
-run: goratt_arm64_screen
+run: vending_arm64_screen
 	ssh bkg@neopi ./beforecopy.sh
-	scp goratt_arm64_screen bkg@neopi:
-	#ssh bkg@neopi ./aftercopy.sh
-
+	scp vending_arm64_screen bkg@neopi:vending
+ 
 clean:
-	rm -f goratt goratt_screen goratt_arm goratt_arm_screen goratt_arm64 goratt_arm64_screen
-
-.PHONY: all all-screen clean run goratt_x86 goratt_x86_screen goratt_arm goratt_arm_screen goratt_arm64 goratt_arm64_screen
+	rm -f vending_* doorlock_* darkroom_*
+ 
+.PHONY: all x86 arm arm64 clean run $(SCREEN_TARGETS) $(NOSCREEN_TARGETS)

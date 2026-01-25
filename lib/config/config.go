@@ -1,13 +1,13 @@
-package main
+package config
 
 import (
-	"goratt/door"
-	"goratt/eventpipe"
-	"goratt/indicator"
-	"goratt/mqtt"
-	"goratt/reader"
-	"goratt/rotary"
-	"goratt/video"
+	"goratt/lib/door"
+	"goratt/lib/eventpipe"
+	"goratt/lib/indicator"
+	"goratt/lib/mqtt"
+	"goratt/lib/reader"
+	"goratt/lib/rotary"
+	"goratt/lib/video"
 )
 
 // Config is the main configuration structure for GoRATT.

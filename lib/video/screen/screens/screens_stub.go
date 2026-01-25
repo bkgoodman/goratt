@@ -2,7 +2,7 @@
 
 package screens
 
-import "goratt/video/screen"
+import "goratt/lib/video/screen"
 
 // IdleScreen stub
 type IdleScreen struct{}

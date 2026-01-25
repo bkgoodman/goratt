@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"goratt/video/screen"
+	"goratt/lib/video/screen"
 )
 
 // Config holds configuration for the event pipe.

@@ -1,12 +1,12 @@
 //go:build screen
 
-package screens
+package vendingscreens
 
 import (
 	"fmt"
 	"time"
 
-	"goratt/video/screen"
+	"goratt/lib/video/screen"
 )
 
 // PaymentFailedScreen displays payment failure.

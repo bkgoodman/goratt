@@ -5,7 +5,7 @@ package screens
 import (
 	"time"
 
-	"goratt/video/screen"
+	"goratt/lib/video/screen"
 )
 
 // GrantedScreen displays the access granted state.

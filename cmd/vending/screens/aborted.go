@@ -1,11 +1,11 @@
 //go:build screen
 
-package screens
+package vendingscreens
 
 import (
 	"time"
 
-	"goratt/video/screen"
+	"goratt/lib/video/screen"
 )
 
 // AbortedScreen displays when payment is aborted/cancelled.

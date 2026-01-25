@@ -5,7 +5,7 @@ package screens
 import (
 	"time"
 
-	"goratt/video/screen"
+	"goratt/lib/video/screen"
 )
 
 // DeniedScreen displays the access denied state.

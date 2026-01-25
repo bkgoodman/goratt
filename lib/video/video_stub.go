@@ -2,7 +2,7 @@
 
 package video
 
-import "goratt/video/screen"
+import "goratt/lib/video/screen"
 
 // ScreenSupported returns whether screen support is compiled in.
 func ScreenSupported() bool {
@@ -25,16 +25,9 @@ func New(cfg ...Config) (*Display, error) {
 	return nil, ErrScreenNotCompiled
 }
 
-func (v *Display) Idle()                                    {}
-func (v *Display) Granted(member, nickname, warning string) {}
-func (v *Display) Denied(member, nickname, warning string)  {}
-func (v *Display) Opening(member, nickname, warning string) {}
-func (v *Display) ConnectionLost()                          {}
-func (v *Display) Shutdown()                                {}
-func (v *Display) Release() error                           { return nil }
-func (v *Display) Width() int                               { return 0 }
-func (v *Display) Height() int                              { return 0 }
-func (v *Display) Manager() *screen.Manager                 { return nil }
-func (v *Display) SendEvent(event screen.Event) bool        { return false }
-func (v *Display) SetMQTTConnected(connected bool)          {}
-func (v *Display) SetBuildID(id string)                     {}
+func (v *Display) Release() error                    { return nil }
+func (v *Display) Width() int                        { return 0 }
+func (v *Display) Height() int                       { return 0 }
+func (v *Display) Manager() *screen.Manager          { return nil }
+func (v *Display) SendEvent(event screen.Event) bool { return false }
+func (v *Display) SetMQTTConnected(connected bool)   {}

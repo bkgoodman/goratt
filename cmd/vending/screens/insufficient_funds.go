@@ -1,12 +1,13 @@
 //go:build screen
 
-package screens
+package vendingscreens
 
 import (
 	"fmt"
 	"time"
 
-	"goratt/video/screen"
+	"goratt/lib/video/screen"
+	"goratt/lib/video/screen/screens"
 )
 
 // InsufficientFundsScreen allows user to add money when balance is too low.
@@ -36,7 +37,7 @@ type InsufficientFundsScreen struct {
 
 	exited bool
 
-	cancelOverlay *CancelOverlay
+	cancelOverlay *screens.CancelOverlay
 }
 
 // NewInsufficientFundsScreen creates a new insufficient funds screen.
@@ -70,15 +71,15 @@ func (s *InsufficientFundsScreen) Init(mgr *screen.Manager) {
 	s.updateX = (mgr.Width() - s.updateWidth) / 2
 	s.updateY = mgr.Height()/2 - 40
 
+	// Initialize cancel overlay
+	config := screens.DefaultCancelOverlayConfig(mgr)
+	s.cancelOverlay = screens.NewCancelOverlay(mgr, config)
+
 	// Reset batching state
 	s.pendingUpdate = false
 	s.updateTimerID = 0
 
 	s.exited = false
-
-	// Initialize cancel overlay
-	config := DefaultCancelOverlayConfig(mgr)
-	s.cancelOverlay = NewCancelOverlay(mgr, config)
 
 	// Start timeout timer
 	s.startTimeout()
@@ -94,7 +95,7 @@ func (s *InsufficientFundsScreen) startTimeout() {
 	// 28s inactivity + 2s visual cancel bar = 30s total
 	s.timeoutID = s.mgr.SetTimeout(28*time.Second, func(scr screen.Screen) {
 		// Inactivity timeout - start visual cancel countdown
-		s.cancelOverlay.Start(CancelModeTimeout, func() {
+		s.cancelOverlay.Start(screens.CancelModeTimeout, func() {
 			// Cancel completed
 			s.mgr.SwitchTo(screen.ScreenAborted)
 		}, func() {
@@ -212,7 +213,7 @@ func (s *InsufficientFundsScreen) HandleEvent(event screen.Event) bool {
 
 	case screen.EventRotaryLongPress:
 		// Long-press - start cancel sequence
-		s.cancelOverlay.Start(CancelModeHold, func() {
+		s.cancelOverlay.Start(screens.CancelModeHold, func() {
 			s.mgr.SwitchTo(screen.ScreenAborted)
 		}, nil)
 		return true
@@ -225,7 +226,9 @@ func (s *InsufficientFundsScreen) Exit() {
 	s.updateTimerID = 0
 	s.pendingUpdate = false
 	s.exited = true
-	s.cancelOverlay.Stop()
+	if s.cancelOverlay != nil {
+		s.cancelOverlay.Stop()
+	}
 }
 
 func (s *InsufficientFundsScreen) Name() string {

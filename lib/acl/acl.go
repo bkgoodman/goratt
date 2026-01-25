@@ -1,4 +1,4 @@
-package main
+package acl
 
 import (
 	"bufio"
@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+ 
+	"goratt/lib/config"
 )
 
 // ACLEntry represents a single ACL entry from the API.
@@ -45,13 +47,13 @@ type ACLRecord struct {
 type ACLManager struct {
 	mu       sync.RWMutex
 	tags     []ACLRecord
-	cfg      *Config
+	cfg      *config.Config
 	tagFile  string
 	onUpdate func() // callback when ACL is updated
 }
 
 // NewACLManager creates a new ACL manager.
-func NewACLManager(cfg *Config) *ACLManager {
+func NewACLManager(cfg *config.Config) *ACLManager {
 	return &ACLManager{
 		cfg:     cfg,
 		tagFile: cfg.TagFile,
