@@ -3,15 +3,26 @@
 package darkroomscreens
  
 import (
+	"time"
+ 
 	"goratt/lib/video/screen"
 )
  
 type DarkroomIdleScreen struct {
-	mgr *screen.Manager
+	mgr       *screen.Manager
+	summary   string
+	organizer string
+	when      string
 }
  
 func NewDarkroomIdleScreen() *DarkroomIdleScreen {
 	return &DarkroomIdleScreen{}
+}
+ 
+func (s *DarkroomIdleScreen) SetNextReservation(summary, organizer, when string) {
+	s.summary = summary
+	s.organizer = organizer
+	s.when = when
 }
  
 func (s *DarkroomIdleScreen) Init(mgr *screen.Manager) {
@@ -19,14 +30,45 @@ func (s *DarkroomIdleScreen) Init(mgr *screen.Manager) {
 }
  
 func (s *DarkroomIdleScreen) Update() {
-	s.mgr.FillBackground(0.1, 0, 0) // Dim red for safety
+	s.mgr.FillBackground(0, 0.5, 0) // Green background
  
-	s.mgr.SetFontSize(56)
-	y := float64(s.mgr.Height()/2) - 40
-	s.mgr.DrawCentered("DARKROOM", y, 0.8, 0, 0)
+	s.mgr.SetFontSize(64)
+	y := 110.0
+	if s.summary == "" {
+		y = float64(s.mgr.Height()/2) - 40
+	}
  
-	s.mgr.SetFontSize(24)
-	s.mgr.DrawCentered("Swipe to enter", y+70, 0.6, 0, 0)
+	s.mgr.DrawCentered("Room Available", y, 1, 1, 1)
+ 
+	s.mgr.SetFontSize(32)
+	s.mgr.DrawCentered("Swipe fob to use room", y+50, 1, 1, 1)
+ 
+	if s.summary != "" {
+		h := y + 85
+		s.mgr.FillRect(50, int(h+20), s.mgr.Width()-100, 180, 1, 1, 1)
+ 
+		// Border/Title box for "Next Reservation"
+		s.mgr.FillRect(200, int(h-5), s.mgr.Width()-400, 48, 0.3, 0.6, 0.3)
+ 
+		s.mgr.SetFontSize(32)
+		s.mgr.DC().SetRGB(0.1, 0.3, 0.1)
+		s.mgr.DrawCentered("-Next Reservation-", h+17, 0.1, 0.3, 0.1)
+ 
+		h += 55
+		s.mgr.SetFontSize(32)
+		s.mgr.DrawCentered(s.summary, h, 0.2, 0.5, 0.2)
+		h += 40
+		s.mgr.DrawCentered(s.organizer, h, 0.2, 0.5, 0.2)
+		h += 40
+		s.mgr.DrawCentered(s.when, h, 0.2, 0.5, 0.2)
+	}
+ 
+	// Lower Banner with time
+	timeYPos := float64(s.mgr.Height() - 76)
+	s.mgr.FillRect(0, int(timeYPos), s.mgr.Width(), 66, 0.3, 0.5, 0.3)
+	s.mgr.SetFontSize(42)
+	formattedDateTime := time.Now().Format("Jan 2 3:04pm")
+	s.mgr.DrawCentered(formattedDateTime, timeYPos+33, 0, 0.25, 0)
  
 	s.mgr.Flush()
 }

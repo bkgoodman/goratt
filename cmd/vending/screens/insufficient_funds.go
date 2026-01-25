@@ -227,7 +227,7 @@ func (s *InsufficientFundsScreen) Exit() {
 	s.pendingUpdate = false
 	s.exited = true
 	if s.cancelOverlay != nil {
-		s.cancelOverlay.Stop()
+		s.cancelOverlay.Reset()
 	}
 }
 

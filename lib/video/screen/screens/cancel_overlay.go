@@ -219,7 +219,9 @@ func (c *CancelOverlay) IsActive() bool {
 	return c.active
 }
 
-// Stop stops the overlay without calling any callbacks.
+// Stop stops the overlay and clears its timer.
+// NEVER call this from a screen's Exit() method (causes deadlock).
+// Use Reset() instead for screen Exit().
 func (c *CancelOverlay) Stop() {
 	c.active = false
 	if c.timerID != 0 {
@@ -227,6 +229,14 @@ func (c *CancelOverlay) Stop() {
 		c.timerID = 0
 	}
 	c.restoreBackground()
+}
+ 
+// Reset stops the overlay without calling any manager methods.
+// Safe to call from a screen's Exit() method.
+func (c *CancelOverlay) Reset() {
+	c.active = false
+	c.timerID = 0
+	c.backup = nil
 }
 
 // drawFull draws the entire overlay area.

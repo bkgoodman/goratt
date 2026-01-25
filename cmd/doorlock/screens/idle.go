@@ -19,14 +19,11 @@ func (s *DoorlockIdleScreen) Init(mgr *screen.Manager) {
 }
  
 func (s *DoorlockIdleScreen) Update() {
-	s.mgr.FillBackground(0, 0, 0.2) // Deep blue
+	s.mgr.FillBackground(0, 0.5, 0) // Green background
  
 	s.mgr.SetFontSize(64)
-	y := float64(s.mgr.Height()/2) - 20
-	s.mgr.DrawCentered("LOCKED", y, 1, 1, 1)
- 
-	s.mgr.SetFontSize(24)
-	s.mgr.DrawCentered("Swipe to enter", y+70, 0.8, 0.8, 0.8)
+	y := float64(s.mgr.Height() / 2)
+	s.mgr.DrawCentered("Ready", y, 1, 1, 1)
  
 	s.mgr.Flush()
 }

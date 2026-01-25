@@ -22,9 +22,12 @@ func (s *DoorlockOpeningScreen) Init(mgr *screen.Manager) {
 }
  
 func (s *DoorlockOpeningScreen) Update() {
-	s.mgr.FillBackground(0, 0, 0.4) // Blue
+	s.mgr.FillBackground(0.7, 0.7, 0) // Yellow
+ 
 	s.mgr.SetFontSize(64)
-	s.mgr.DrawCentered("OPENING", float64(s.mgr.Height()/2), 1, 1, 1)
+	y := float64(s.mgr.Height()/2) - 40
+	s.mgr.DrawCentered("Opening...", y, 0, 0, 0)
+ 
 	s.mgr.Flush()
 }
  

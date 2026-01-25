@@ -47,6 +47,7 @@ type Config struct {
 	WaitSecs     int    `yaml:"wait_secs"`
 	OpenSecret   string `yaml:"open_secret"`
 	OpenToolName string `yaml:"open_tool_name"`
+	CalendarURL  string `yaml:"calendar_url"`
 }
 
 // APIConfig holds API backend settings.

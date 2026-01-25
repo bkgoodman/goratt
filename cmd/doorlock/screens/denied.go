@@ -29,15 +29,16 @@ func (s *DoorlockDeniedScreen) Init(mgr *screen.Manager) {
 }
  
 func (s *DoorlockDeniedScreen) Update() {
-	s.mgr.FillBackground(0.5, 0, 0) // Red
+	s.mgr.FillBackground(0.7, 0, 0) // Red
  
 	s.mgr.SetFontSize(64)
-	y := float64(s.mgr.Height()/2) - 20
-	s.mgr.DrawCentered("DENIED", y, 1, 1, 1)
+	y := float64(s.mgr.Height()/2) - 40
+	s.mgr.DrawCentered("Access Denied", y, 1, 1, 1)
  
 	if s.warning != "" {
 		s.mgr.SetFontSize(32)
-		s.mgr.DrawCentered(s.warning, y+70, 0.9, 0.9, 0.9)
+		s.mgr.DC().SetRGB(1, 1, 0) // Yellow warning text
+		s.mgr.DC().DrawStringAnchored(s.warning, float64(s.mgr.Width()/2), y+130, 0.5, 0.5)
 	}
  
 	s.mgr.Flush()

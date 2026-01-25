@@ -3,6 +3,7 @@
 package darkroomscreens
  
 import (
+	"strings"
 	"time"
  
 	"goratt/lib/video/screen"
@@ -11,7 +12,6 @@ import (
 type DarkroomGrantedScreen struct {
 	mgr      *screen.Manager
 	member   string
-	nickname string
 	warning  string
 }
  
@@ -21,7 +21,6 @@ func NewDarkroomGrantedScreen() *DarkroomGrantedScreen {
  
 func (s *DarkroomGrantedScreen) SetInfo(member, nickname, warning string) {
 	s.member = member
-	s.nickname = nickname
 	s.warning = warning
 }
  
@@ -39,10 +38,7 @@ func (s *DarkroomGrantedScreen) Update() {
 	y := float64(s.mgr.Height()/2) - 40
 	s.mgr.DrawCentered("Welcome", y, 1, 0, 0)
  
-	displayName := s.nickname
-	if displayName == "" {
-		displayName = s.member
-	}
+	displayName := strings.ReplaceAll(s.member, ".", " ")
 	if displayName != "" {
 		s.mgr.SetFontSize(48)
 		s.mgr.DrawCentered(displayName, y+70, 1, 0, 0)
