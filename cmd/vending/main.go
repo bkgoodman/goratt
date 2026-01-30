@@ -67,6 +67,7 @@ func main() {
 	audioParams := audio.Params{
 		Format: "S16_LE",
 		Rate: 16000,
+		Type: "raw",
 		Channels: 1,
 	}
 	vendingApp.Base = app.NewBaseApp(&cfg, &audioParams, vendingApp)
