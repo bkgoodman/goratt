@@ -6,6 +6,7 @@ import (
 	"time"
  
 	"goratt/lib/video/screen"
+	"goratt/cmd/vending/assets"
 )
  
 type VendingDeniedScreen struct {
@@ -26,6 +27,9 @@ func (s *VendingDeniedScreen) Init(mgr *screen.Manager) {
 	mgr.SetTimeout(3*time.Second, func(scr screen.Screen) {
 		mgr.SwitchTo(screen.ScreenIdle)
 	})
+
+	// Play purchase audio
+	s.mgr.PlayAudioBytes(assets.Audio_notrecognized)
 }
  
 func (s *VendingDeniedScreen) Update() {

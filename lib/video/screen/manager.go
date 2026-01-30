@@ -81,6 +81,8 @@ type Manager struct {
 	stopAudioFn func()
 	// Audio play function
 	playAudioFn func(filename string)
+	// Audio play bytes function
+	playAudioBytesFn func(pcm []byte)
 }
 
 // NewManager creates a new screen manager.
@@ -438,6 +440,13 @@ func (m *Manager) SetPlayAudioFn(fn func(filename string)) {
 	m.playAudioFn = fn
 }
 
+// SetPlayAudioBytesFn sets the function to call to play audio.
+func (m *Manager) SetPlayAudioBytesFn(fn func(pcm []byte)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.playAudioBytesFn = fn
+}
+
 // PlayAudio calls the play audio function if set.
 func (m *Manager) PlayAudio(filename string) {
 	m.mu.Lock()
@@ -445,5 +454,15 @@ func (m *Manager) PlayAudio(filename string) {
 	m.mu.Unlock()
 	if fn != nil {
 		fn(filename)
+	}
+
+}
+// PlayAudioBytes calls the play audio function if set.
+func (m *Manager) PlayAudioBytes(pcm []byte) {
+	m.mu.Lock()
+	fn := m.playAudioBytesFn
+	m.mu.Unlock()
+	if fn != nil {
+		fn(pcm)
 	}
 }

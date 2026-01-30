@@ -109,6 +109,7 @@ func NewBaseApp(cfg *config.Config, audioParams *audio.Params, handler Handler) 
 		mgr.SwitchTo(screen.ScreenConnectionLost)
 		mgr.SetStopAudioFn(app.Audio.Stop)
 		mgr.SetPlayAudioFn(app.Audio.PlayPCM)
+		mgr.SetPlayAudioBytesFn(app.Audio.PlayBuffer)
 	}
  
 	// Initialize rotary encoder
