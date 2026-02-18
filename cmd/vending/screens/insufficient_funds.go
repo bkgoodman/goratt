@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"goratt/cmd/vending/assets"
 	"goratt/lib/video/screen"
 	"goratt/lib/video/screen/screens"
 )
@@ -85,7 +86,7 @@ func (s *InsufficientFundsScreen) Init(mgr *screen.Manager) {
 	s.startTimeout()
 
 	// Play purchase audio
-	s.mgr.PlayAudio("reup_16.pcm")
+	s.mgr.PlayAudioBytes(assets.Audio_reup)
 }
 
 func (s *InsufficientFundsScreen) startTimeout() {

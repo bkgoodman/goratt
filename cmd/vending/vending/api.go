@@ -42,10 +42,10 @@ func (c *Client) applyAuth(req *http.Request) {
 
 // BalanceResponse represents the response from queryBalance
 type BalanceResponse struct {
-	Status    string  `json:"status"`
-	Balance   float64 `json:"balance,omitempty"`
-	LastLog   int     `json:"lastLog,omitempty"`
-	ErrorDesc string  `json:"description,omitempty"`
+	Status    string
+	Balance   float64
+	LastLog   int
+	ErrorDesc string
 }
 
 // ChargeRequest represents the request for chargeAccount
@@ -112,16 +112,30 @@ func (c *Client) QueryBalance(member string) (*BalanceResponse, error) {
 		return nil, fmt.Errorf("reading response body: %w", err)
 	}
 
-	var balanceResp BalanceResponse
-	if err := json.Unmarshal(body, &balanceResp); err != nil {
+	type apiBalanceResponse struct {
+		Status    string `json:"status"`
+		Balance   int    `json:"balance"`
+		LastLog   int    `json:"lastLog"`
+		ErrorDesc string `json:"description"`
+	}
+
+	var apiResp apiBalanceResponse
+	if err := json.Unmarshal(body, &apiResp); err != nil {
 		return nil, fmt.Errorf("unmarshaling response: %w", err)
 	}
 
-	if balanceResp.Status != "success" {
-		return &balanceResp, fmt.Errorf("API error: %s", balanceResp.ErrorDesc)
+	balanceResp := &BalanceResponse{
+		Status:    apiResp.Status,
+		Balance:   CentsToDollars(apiResp.Balance),
+		LastLog:   apiResp.LastLog,
+		ErrorDesc: apiResp.ErrorDesc,
 	}
 
-	return &balanceResp, nil
+	if balanceResp.Status != "success" {
+		return balanceResp, fmt.Errorf("API error: %s", balanceResp.ErrorDesc)
+	}
+
+	return balanceResp, nil
 }
 
 // ChargeAccount charges a member's account for a purchase

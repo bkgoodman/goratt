@@ -1,16 +1,17 @@
 //go:build screen
- 
+
 package vendingscreens
- 
+
 import (
 	"fmt"
 	"strings"
 	"time"
- 
+
+	"goratt/cmd/vending/assets"
 	"goratt/lib/video/screen"
 	"goratt/lib/video/screen/screens"
 )
- 
+
 // SelectAmountScreen allows user to select payment amount with rotary encoder.
 type SelectAmountScreen struct {
 	mgr           *screen.Manager
@@ -22,23 +23,23 @@ type SelectAmountScreen struct {
 	maxAmount     float64
 	step          float64
 	timeoutPeriod time.Duration
- 
+
 	// Partial update area for amount display
 	amountX      int
 	amountY      int
 	amountWidth  int
 	amountHeight int
- 
+
 	// Batched UI updates to avoid blocking rotary encoder
 	updateTimerID  screen.TimerID
 	pendingUpdate  bool
 	updateInterval time.Duration
- 
+
 	exited bool
- 
+
 	cancelOverlay *screens.CancelOverlay
 }
- 
+
 // NewSelectAmountScreen creates a new select amount screen.
 func NewSelectAmountScreen() *SelectAmountScreen {
 	return &SelectAmountScreen{
@@ -49,43 +50,43 @@ func NewSelectAmountScreen() *SelectAmountScreen {
 		updateInterval: 50 * time.Millisecond, // Batch updates every 50ms
 	}
 }
- 
+
 func (s *SelectAmountScreen) Init(mgr *screen.Manager) {
 	s.mgr = mgr
- 
+
 	// Get member info from vending session
 	s.member, _, s.amount = mgr.GetVendingSession()
 	s.balance = mgr.GetVendingBalance()
- 
+
 	// Default to $1.00 if not set
 	if s.amount == 0 {
 		s.amount = 1.00
 		mgr.SetVendingSession(s.member, "", s.amount)
 	}
- 
+
 	// Calculate partial update area for amount (centered, ~250px wide x 90px tall)
 	s.amountWidth = 250
 	s.amountHeight = 90
 	s.amountX = (mgr.Width() - s.amountWidth) / 2
 	s.amountY = mgr.Height()/2 - 5 // Moved up to avoid overlapping instructions
- 
+
 	// Reset batching state
 	s.pendingUpdate = false
 	s.updateTimerID = 0
- 
+
 	s.exited = false
- 
+
 	// Initialize cancel overlay
 	config := screens.DefaultCancelOverlayConfig(mgr)
 	s.cancelOverlay = screens.NewCancelOverlay(mgr, config)
- 
+
 	// Start timeout timer
 	s.startTimeout()
- 
+
 	// Play purchase audio
-	s.mgr.PlayAudio("purchase_16.pcm")
+	s.mgr.PlayAudioBytes(assets.Audio_purchase)
 }
- 
+
 func (s *SelectAmountScreen) startTimeout() {
 	if s.timeoutID != 0 {
 		s.mgr.ClearTimeout(s.timeoutID)
@@ -102,70 +103,70 @@ func (s *SelectAmountScreen) startTimeout() {
 		})
 	})
 }
- 
+
 func (s *SelectAmountScreen) Update() {
 	s.mgr.FillBackground(0, 0.4, 0.6) // Blue background
- 
+
 	// Title
 	s.mgr.SetFontSize(48)
 	s.mgr.DrawCentered("Purchase Amount", float64(s.mgr.Height()/2)-90, 1, 1, 1)
- 
+
 	// Display member name
 	displayName := strings.ReplaceAll(s.member, ".", " ")
-	
+
 	if displayName != "" {
 		s.mgr.SetFontSize(28)
 		s.mgr.DrawCentered(displayName, float64(s.mgr.Height()/2)-155, 0.9, 0.9, 0.9)
 	}
- 
+
 	// Display current balance
 	s.mgr.SetFontSize(20)
 	s.mgr.DrawCentered(fmt.Sprintf("Current Balance: $%.2f", s.balance), float64(s.mgr.Height()/2)-25, 0.8, 0.8, 0.8)
- 
+
 	// Display amount (large)
 	s.mgr.SetFontSize(72)
 	amountStr := fmt.Sprintf("$%.2f", s.amount)
 	s.mgr.DrawCentered(amountStr, float64(s.mgr.Height()/2)+40, 1, 1, 0)
- 
+
 	// Instructions
 	s.mgr.SetFontSize(20)
 	s.mgr.DrawCentered("Turn knob to adjust", float64(s.mgr.Height()/2)+100, 0.9, 0.9, 0.9)
 	s.mgr.DrawCentered("Press to confirm", float64(s.mgr.Height()/2)+130, 0.9, 0.9, 0.9)
- 
+
 	// Draw cancel overlay if active
 	s.cancelOverlay.Draw()
- 
+
 	s.mgr.Flush()
 }
- 
+
 // updateAmountDisplay does a partial update of just the amount area
 func (s *SelectAmountScreen) updateAmountDisplay() {
 	// Clear the amount area with background color
 	s.mgr.DC().SetRGB(0, 0.4, 0.6)
 	s.mgr.DC().DrawRectangle(float64(s.amountX), float64(s.amountY), float64(s.amountWidth), float64(s.amountHeight))
 	s.mgr.DC().Fill()
- 
+
 	// Draw the amount text
 	s.mgr.SetFontSize(72)
 	amountStr := fmt.Sprintf("$%.2f", s.amount)
 	s.mgr.DrawCentered(amountStr, float64(s.mgr.Height()/2)+40, 1, 1, 0)
- 
+
 	// Flush only the amount area
 	s.mgr.FlushRect(s.amountX, s.amountY, s.amountWidth, s.amountHeight)
 }
- 
+
 func (s *SelectAmountScreen) HandleEvent(event screen.Event) bool {
 	// If cancel overlay is active, let it handle interaction
 	if s.cancelOverlay.HandleEvent(event) {
 		return true
 	}
- 
+
 	switch event.Type {
 	case screen.EventRotaryTurn:
 		if rotary := event.Rotary(); rotary != nil {
 			// Adjust amount immediately (fast, no UI blocking)
 			s.amount += float64(rotary.Delta) * s.step
- 
+
 			// Clamp to min/max
 			if s.amount < s.minAmount {
 				s.amount = s.minAmount
@@ -173,10 +174,10 @@ func (s *SelectAmountScreen) HandleEvent(event screen.Event) bool {
 			if s.amount > s.maxAmount {
 				s.amount = s.maxAmount
 			}
- 
+
 			// Update session
 			s.mgr.SetVendingSession(s.member, "", s.amount)
- 
+
 			// Schedule batched UI update if not already pending
 			if !s.pendingUpdate {
 				s.pendingUpdate = true
@@ -189,18 +190,18 @@ func (s *SelectAmountScreen) HandleEvent(event screen.Event) bool {
 					}
 				})
 			}
- 
+
 			// Reset timeout
 			s.startTimeout()
- 
+
 			return true
 		}
- 
+
 	case screen.EventRotaryPress:
 		// Short press - go to confirm screen
 		s.mgr.SwitchTo(screen.ScreenConfirm)
 		return true
- 
+
 	case screen.EventRotaryLongPress:
 		// Long press - start cancel sequence
 		s.cancelOverlay.Start(screens.CancelModeHold, func() {
@@ -210,7 +211,7 @@ func (s *SelectAmountScreen) HandleEvent(event screen.Event) bool {
 	}
 	return false
 }
- 
+
 func (s *SelectAmountScreen) Exit() {
 	s.timeoutID = 0
 	s.updateTimerID = 0
@@ -220,7 +221,7 @@ func (s *SelectAmountScreen) Exit() {
 		s.cancelOverlay.Reset()
 	}
 }
- 
+
 func (s *SelectAmountScreen) Name() string {
 	return "SelectAmount"
 }

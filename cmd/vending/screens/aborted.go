@@ -5,6 +5,7 @@ package vendingscreens
 import (
 	"time"
 
+	"goratt/cmd/vending/assets"
 	"goratt/lib/video/screen"
 )
 
@@ -31,7 +32,7 @@ func (s *AbortedScreen) Init(mgr *screen.Manager) {
 	})
 
 	// Play purchase audio
-	s.mgr.PlayAudio("canceled_16.pcm")
+	s.mgr.PlayAudioBytes(assets.Audio_canceled)
 }
 
 func (s *AbortedScreen) Update() {

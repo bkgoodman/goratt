@@ -17,6 +17,8 @@ type VendingIdleScreen struct {
 	mgr     *screen.Manager
 	buildID string
 
+	mqttConnected bool
+
 	// IP address display
 	lastIP        string
 	ipTimerID     screen.TimerID
@@ -85,6 +87,7 @@ func (s *VendingIdleScreen) shouldShowIPForScreen() bool {
 
 func (s *VendingIdleScreen) Init(mgr *screen.Manager) {
 	s.mgr = mgr
+	s.mqttConnected = mgr.IsMQTTConnected()
 	if s.shouldShowIPForScreen() {
 		s.lastIP = getIPAddress()
 		s.startIPRefresh()
@@ -150,12 +153,30 @@ func (s *VendingIdleScreen) Update() {
 	s.mgr.DrawCentered("Swipe badge to buy", y+70, 0.9, 0.9, 0.9)
 	s.mgr.DrawCentered("Charge to member's card-on-file", y+100, 0.9, 0.9, 0.9)
 
+	if !s.mqttConnected {
+		s.mgr.SetFontSize(20)
+		s.mgr.DrawCentered("NETWORK OFFLINE - RETRYING", y+150, 1, 0.6, 0.6)
+	}
+
 	s.drawIPBar()
 	s.mgr.Flush()
 }
 
 func (s *VendingIdleScreen) HandleEvent(event screen.Event) bool {
-	if event.Type == screen.EventRotaryLongPress {
+	switch event.Type {
+	case screen.EventMQTTConnected:
+		if !s.mqttConnected {
+			s.mqttConnected = true
+			s.mgr.Update()
+		}
+		return true
+	case screen.EventMQTTDisconnected:
+		if s.mqttConnected {
+			s.mqttConnected = false
+			s.mgr.Update()
+		}
+		return true
+	case screen.EventRotaryLongPress:
 		currentlyShowing := s.shouldShowIPForScreen()
 		if currentlyShowing {
 			if shouldShowIP() {
