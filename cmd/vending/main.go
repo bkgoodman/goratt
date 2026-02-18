@@ -70,6 +70,9 @@ func main() {
 		Channels: 1,
 	}
 	vendingApp.Base = app.NewBaseApp(&cfg.Config, &audioParams, vendingApp)
+	if vendingApp.Base.IdleScreen != nil {
+		vendingApp.Base.IdleScreen.SetBuildID(myBuild)
+	}
 
 	if vendingApp.Base.Display != nil {
 		mgr := vendingApp.Base.Display.Manager()
@@ -95,6 +98,9 @@ func main() {
 		mgr.Register(screen.ScreenProcessing, vendingApp.processingScreen)
 		mgr.Register(screen.ScreenSuccess, vendingApp.successScreen)
 		mgr.Register(screen.ScreenPaymentFailed, vendingApp.paymentFailedScreen)
+
+		// Ensure our custom idle screen replaces the default one
+		mgr.SwitchTo(screen.ScreenIdle)
 	}
 
 	// Initialize vending API client

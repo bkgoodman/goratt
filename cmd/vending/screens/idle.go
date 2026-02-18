@@ -3,6 +3,7 @@
 package vendingscreens
 
 import (
+	"fmt"
 	"net"
 	"strings"
 	"time"
@@ -13,11 +14,18 @@ import (
 // startupTime is set once when the package is loaded
 var startupTime = time.Now()
 
+// VendingIdleScreen displays the ready/idle state.
 type VendingIdleScreen struct {
-	mgr     *screen.Manager
-	buildID string
+	mgr         *screen.Manager
+	counter     int
+	showCounter bool
+	timerID     screen.TimerID
 
-	mqttConnected bool
+	// Counter display area for partial updates
+	counterX      int
+	counterY      int
+	counterWidth  int
+	counterHeight int
 
 	// IP address display
 	lastIP        string
@@ -26,14 +34,17 @@ type VendingIdleScreen struct {
 	ipBarHeight   int
 	forceShowIP   bool // Force IP display even after startup window
 	forceHideIP   bool // Force IP to hide even during startup window
+	buildID       string
 }
 
+// NewIdleScreen creates a new idle screen.
 func NewVendingIdleScreen() *VendingIdleScreen {
 	return &VendingIdleScreen{
 		ipBarHeight: 44,
 	}
 }
 
+// SetBuildID sets the build identifier string.
 func (s *VendingIdleScreen) SetBuildID(id string) {
 	s.buildID = id
 }
@@ -46,9 +57,14 @@ func getIPAddress() string {
 	}
 
 	for _, iface := range ifaces {
-		if iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagUp == 0 {
+		// Skip loopback, down interfaces, and non-physical interfaces
+		if iface.Flags&net.FlagLoopback != 0 {
 			continue
 		}
+		if iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		// Only consider wlan* or eth* interfaces
 		if !strings.HasPrefix(iface.Name, "wlan") && !strings.HasPrefix(iface.Name, "eth") {
 			continue
 		}
@@ -66,42 +82,64 @@ func getIPAddress() string {
 			case *net.IPAddr:
 				ip = v.IP
 			}
-			if ip != nil && ip.To4() != nil {
-				return ip.String()
+
+			// Skip IPv6 and return first IPv4
+			if ip == nil || ip.To4() == nil {
+				continue
 			}
+			return ip.String()
 		}
 	}
 	return ""
 }
 
+// shouldShowIP returns true if we're within 2 minutes of startup
 func shouldShowIP() bool {
 	return time.Since(startupTime) < 2*time.Minute
 }
 
+// shouldShowIPForScreen returns true if IP should be shown for this screen instance
 func (s *VendingIdleScreen) shouldShowIPForScreen() bool {
+	// During startup window, respect the forceHide flag if set
 	if shouldShowIP() && !s.forceHideIP {
 		return true
 	}
+	// After startup or if manually forced
 	return s.forceShowIP
 }
 
 func (s *VendingIdleScreen) Init(mgr *screen.Manager) {
 	s.mgr = mgr
-	s.mqttConnected = mgr.IsMQTTConnected()
+	s.counter = 0
+	s.showCounter = false
+	s.timerID = 0
+
+	// Calculate counter area - centered box for the number
+	// Assuming max ~6 digits at 48pt font, roughly 120px wide
+	s.counterWidth = 150
+	s.counterX = (mgr.Width() - s.counterWidth) / 2
+	s.counterY = mgr.Height() / 4 * 3
+	s.counterHeight = 60
+
+	// Start IP address refresh timer if within startup window
 	if s.shouldShowIPForScreen() {
 		s.lastIP = getIPAddress()
 		s.startIPRefresh()
 	}
 }
 
+// startIPRefresh sets up a timer to periodically refresh the IP address display
 func (s *VendingIdleScreen) startIPRefresh() {
 	if !s.shouldShowIPForScreen() {
+		// Past the 2-minute window and not forced, stop refreshing
 		s.ipTimerID = 0
 		return
 	}
 
+	// Refresh every 5 seconds
 	s.ipTimerID = s.mgr.SetTimeout(5*time.Second, func(scr screen.Screen) {
 		if !s.shouldShowIPForScreen() {
+			// Time's up and not forced, do a full redraw to remove the IP bar
 			s.ipTimerID = 0
 			s.mgr.Update()
 			return
@@ -112,29 +150,37 @@ func (s *VendingIdleScreen) startIPRefresh() {
 			s.lastIP = newIP
 			s.updateIPBar()
 		}
-		s.startIPRefresh()
+		s.startIPRefresh() // Schedule next refresh
 	})
 }
 
+// updateIPBar does a partial update of just the IP address bar
 func (s *VendingIdleScreen) updateIPBar() {
 	s.drawIPBar()
 	s.mgr.FlushRect(0, 0, s.mgr.Width(), s.ipBarHeight)
 }
 
+// drawIPBar draws the IP address bar (call before Flush)
 func (s *VendingIdleScreen) drawIPBar() {
 	if !s.shouldShowIPForScreen() {
 		return
 	}
+
+	// White bar at top
 	s.mgr.FillRect(0, 0, s.mgr.Width(), s.ipBarHeight, 1, 1, 1)
+
+	// Black text
 	s.mgr.DC().SetRGB(0, 0, 0)
 	s.mgr.SetFontSize(16)
 
+	// First line: IP address
 	ip := s.lastIP
 	if ip == "" {
 		ip = "No IP"
 	}
 	s.mgr.DC().DrawStringAnchored(ip, float64(s.mgr.Width()/2), 12, 0.5, 0.5)
 
+	// Second line: Build ID
 	build := s.buildID
 	if build == "" {
 		build = "Unknown Build"
@@ -143,61 +189,146 @@ func (s *VendingIdleScreen) drawIPBar() {
 }
 
 func (s *VendingIdleScreen) Update() {
-	s.mgr.FillBackground(0, 0.4, 0.2) // Teak/Forest green
+	s.mgr.FillBackground(0, 0.5, 0) // Green background
 
+	// Title
 	s.mgr.SetFontSize(56)
-	y := float64(s.mgr.Height()/2) - 40
-	s.mgr.DrawCentered("Pay-by-RATT", y, 1, 1, 1)
+	s.mgr.DrawCentered("Pay-by-RATT", float64(s.mgr.Height()/2)-40, 1, 1, 1)
 
+	// Instruction
 	s.mgr.SetFontSize(24)
-	s.mgr.DrawCentered("Swipe badge to buy", y+70, 0.9, 0.9, 0.9)
-	s.mgr.DrawCentered("Charge to member's card-on-file", y+100, 0.9, 0.9, 0.9)
+	s.mgr.DrawCentered("Swipe key fob to begin", float64(s.mgr.Height()/2)+10, 0.9, 0.9, 0.9)
 
-	if !s.mqttConnected {
-		s.mgr.SetFontSize(20)
-		s.mgr.DrawCentered("NETWORK OFFLINE - RETRYING", y+150, 1, 0.6, 0.6)
+	// Show debug counter if active
+	if s.showCounter {
+		s.mgr.SetFontSize(48)
+		s.mgr.DrawCentered(fmt.Sprintf("%d", s.counter), float64(s.mgr.Height()/2)+60, 1, 1, 0)
 	}
 
+	// Draw MQTT disconnected indicator if not connected
+	s.drawMQTTIndicator()
+
+	// Draw mock mode indicator if in mock mode
+	s.drawMockModeIndicator()
+
+	// Draw IP bar if within startup window
 	s.drawIPBar()
+
 	s.mgr.Flush()
+}
+
+// drawMQTTIndicator draws a red "NO MQTT" indicator at bottom if disconnected
+func (s *VendingIdleScreen) drawMQTTIndicator() {
+	if s.mgr.IsMQTTConnected() {
+		return
+	}
+
+	// Red bar at bottom
+	barHeight := 24
+	barY := s.mgr.Height() - barHeight
+	if s.mgr.IsMockMode() {
+		// Move up to make room for mock mode indicator
+		barY -= barHeight
+	}
+	s.mgr.FillRect(0, barY, s.mgr.Width(), barHeight, 0.8, 0, 0)
+
+	// White text
+	s.mgr.SetFontSize(16)
+	s.mgr.DC().SetRGB(1, 1, 1)
+	s.mgr.DC().DrawStringAnchored("NO MQTT", float64(s.mgr.Width()/2), float64(barY+barHeight/2), 0.5, 0.5)
+}
+
+// drawMockModeIndicator draws a yellow "MOCK MODE" indicator at bottom if enabled
+func (s *VendingIdleScreen) drawMockModeIndicator() {
+	if !s.mgr.IsMockMode() {
+		return
+	}
+
+	// Yellow bar at very bottom
+	barHeight := 24
+	barY := s.mgr.Height() - barHeight
+	s.mgr.FillRect(0, barY, s.mgr.Width(), barHeight, 0.8, 0.8, 0)
+
+	// Black text
+	s.mgr.SetFontSize(16)
+	s.mgr.DC().SetRGB(0, 0, 0)
+	s.mgr.DC().DrawStringAnchored("DEBUG MODE", float64(s.mgr.Width()/2), float64(barY+barHeight/2), 0.5, 0.5)
+}
+
+// updateCounter does a partial update of just the counter area
+func (s *VendingIdleScreen) updateCounter() {
+	// Clear the counter area with background color
+	s.mgr.FillRect(s.counterX, s.counterY, s.counterWidth, s.counterHeight, 0, 0.5, 0)
+
+	// Draw counter if visible
+	if s.showCounter {
+		s.mgr.SetFontSize(48)
+		s.mgr.DrawCentered(fmt.Sprintf("%d", s.counter), float64(s.counterY+24), 1, 1, 0)
+	}
+
+	// Flush only the counter area
+	s.mgr.FlushRect(s.counterX, s.counterY, s.counterWidth, s.counterHeight)
 }
 
 func (s *VendingIdleScreen) HandleEvent(event screen.Event) bool {
 	switch event.Type {
-	case screen.EventMQTTConnected:
-		if !s.mqttConnected {
-			s.mqttConnected = true
-			s.mgr.Update()
+	case screen.EventRotaryTurn:
+		if rotary := event.Rotary(); rotary != nil {
+			s.counter += rotary.Delta
+			s.showCounter = true
+			s.resetTimeout()
+			s.updateCounter()
+			return true
 		}
-		return true
-	case screen.EventMQTTDisconnected:
-		if s.mqttConnected {
-			s.mqttConnected = false
-			s.mgr.Update()
+	case screen.EventRotaryPress:
+		if s.showCounter {
+			s.showCounter = false
+			s.counter = 0
+			if s.timerID != 0 {
+				s.mgr.ClearTimeout(s.timerID)
+				s.timerID = 0
+			}
+			s.updateCounter()
+			return true
 		}
-		return true
 	case screen.EventRotaryLongPress:
+		// Long press - toggle IP display
+		inStartupWindow := shouldShowIP()
 		currentlyShowing := s.shouldShowIPForScreen()
+
 		if currentlyShowing {
-			if shouldShowIP() {
+			// IP is currently showing - hide it
+			if inStartupWindow {
+				// During startup, set forceHide flag to override
 				s.forceHideIP = true
 				s.forceShowIP = false
+				if s.ipTimerID != 0 {
+					s.mgr.ClearTimeout(s.ipTimerID)
+					s.ipTimerID = 0
+				}
+				if s.ipHideTimerID != 0 {
+					s.mgr.ClearTimeout(s.ipHideTimerID)
+					s.ipHideTimerID = 0
+				}
 			} else {
+				// Manual display - hide immediately
 				s.forceShowIP = false
-			}
-			if s.ipTimerID != 0 {
-				s.mgr.ClearTimeout(s.ipTimerID)
-				s.ipTimerID = 0
-			}
-			if s.ipHideTimerID != 0 {
-				s.mgr.ClearTimeout(s.ipHideTimerID)
-				s.ipHideTimerID = 0
+				if s.ipTimerID != 0 {
+					s.mgr.ClearTimeout(s.ipTimerID)
+					s.ipTimerID = 0
+				}
+				if s.ipHideTimerID != 0 {
+					s.mgr.ClearTimeout(s.ipHideTimerID)
+					s.ipHideTimerID = 0
+				}
 			}
 		} else {
+			// IP is hidden - show it
 			s.forceHideIP = false
 			s.forceShowIP = true
 			s.lastIP = getIPAddress()
 			s.startIPRefresh()
+			// Set 2-minute auto-hide timer
 			s.ipHideTimerID = s.mgr.SetTimeout(2*time.Minute, func(scr screen.Screen) {
 				s.forceShowIP = false
 				if s.ipTimerID != 0 {
@@ -205,16 +336,59 @@ func (s *VendingIdleScreen) HandleEvent(event screen.Event) bool {
 					s.ipTimerID = 0
 				}
 				s.ipHideTimerID = 0
-				s.mgr.Update()
+				s.mgr.Update() // Full redraw to hide IP bar
 			})
 		}
-		s.mgr.Update()
+		s.mgr.Update() // Full redraw to show/hide IP bar
+		return true
+	case screen.EventMQTTConnected:
+		s.updateMQTTIndicator()
+		return true
+	case screen.EventMQTTDisconnected:
+		s.updateMQTTIndicator()
 		return true
 	}
 	return false
 }
 
+// updateMQTTIndicator does a partial update of just the MQTT indicator area at bottom
+func (s *VendingIdleScreen) updateMQTTIndicator() {
+	barHeight := 24
+	barY := s.mgr.Height() - barHeight
+	if s.mgr.IsMockMode() {
+		// Move up to make room for mock mode indicator
+		barY -= barHeight
+	}
+
+	if s.mgr.IsMQTTConnected() {
+		// Clear the bar area with background color
+		s.mgr.FillRect(0, barY, s.mgr.Width(), barHeight, 0, 0.5, 0)
+	} else {
+		// Draw the red indicator
+		s.drawMQTTIndicator()
+	}
+
+	s.mgr.FlushRect(0, barY, s.mgr.Width(), barHeight)
+}
+
+func (s *VendingIdleScreen) resetTimeout() {
+	// Clear existing timer
+	if s.timerID != 0 {
+		s.mgr.ClearTimeout(s.timerID)
+	}
+	// Set new 10 second timeout to hide counter
+	s.timerID = s.mgr.SetTimeout(10*time.Second, func(scr screen.Screen) {
+		s.showCounter = false
+		s.counter = 0
+		s.timerID = 0
+		s.updateCounter()
+	})
+}
+
 func (s *VendingIdleScreen) Exit() {
+	s.showCounter = false
+	s.counter = 0
+	s.timerID = 0
 	s.ipTimerID = 0
 	s.ipHideTimerID = 0
 	s.forceShowIP = false
