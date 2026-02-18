@@ -1,5 +1,5 @@
 package main
- 
+
 import (
 	"encoding/json"
 	"flag"
@@ -7,22 +7,21 @@ import (
 	"log"
 	"os"
 	"time"
- 
+
 	"gopkg.in/yaml.v2"
- 
+
 	vendingscreens "goratt/cmd/vending/screens"
 	"goratt/cmd/vending/vending"
 	"goratt/lib/acl"
 	"goratt/lib/app"
-	"goratt/lib/auth"
 	"goratt/lib/audio"
-	"goratt/lib/config"
+	"goratt/lib/auth"
 	"goratt/lib/indicator"
 	"goratt/lib/video/screen"
 )
- 
+
 var myBuild string
- 
+
 type VendingApp struct {
 	Base                  *app.BaseApp
 	vendingClient         *vending.Client
@@ -37,44 +36,44 @@ type VendingApp struct {
 	successScreen           *vendingscreens.SuccessScreen
 	paymentFailedScreen     *vendingscreens.PaymentFailedScreen
 }
- 
+
 type OpenRequest struct {
 	Member    string `json:"member"`
 	ToolName  string `json:"tool"`
 	Timestamp uint64 `json:"timestamp"`
 	Signature string `json:"signature"`
 }
- 
+
 func main() {
 	fmt.Printf("GoRATT Vending build %s\n", myBuild)
- 
+
 	openflag := flag.Bool("holdopen", false, "Hold door open indefinitely")
 	cfgfile := flag.String("cfg", "goratt.cfg", "Config file")
 	flag.Parse()
- 
+
 	f, err := os.Open(*cfgfile)
 	if err != nil {
 		log.Fatalf("Open config: %v", err)
 	}
 	defer f.Close()
- 
-	var cfg config.Config
+
+	var cfg AppConfig
 	if err := yaml.NewDecoder(f).Decode(&cfg); err != nil {
 		log.Fatalf("Decode config: %v", err)
 	}
- 
+
 	vendingApp := &VendingApp{}
 	audioParams := audio.Params{
-		Format: "S16_LE",
-		Rate: 16000,
-		Type: "raw",
+		Format:   "S16_LE",
+		Rate:     16000,
+		Type:     "raw",
 		Channels: 1,
 	}
-	vendingApp.Base = app.NewBaseApp(&cfg, &audioParams, vendingApp)
- 
+	vendingApp.Base = app.NewBaseApp(&cfg.Config, &audioParams, vendingApp)
+
 	if vendingApp.Base.Display != nil {
 		mgr := vendingApp.Base.Display.Manager()
- 
+
 		// Local custom screens
 		idle := vendingscreens.NewVendingIdleScreen()
 		idle.SetBuildID(myBuild)
@@ -86,7 +85,7 @@ func main() {
 		vendingApp.processingScreen = vendingscreens.NewProcessingScreen()
 		vendingApp.successScreen = vendingscreens.NewSuccessScreen()
 		vendingApp.paymentFailedScreen = vendingscreens.NewPaymentFailedScreen()
- 
+
 		mgr.Register(screen.ScreenIdle, idle)
 		mgr.Register(screen.ScreenDenied, vendingApp.deniedScreen)
 		mgr.Register(screen.ScreenSelectAmount, vendingApp.selectAmountScreen)
@@ -97,12 +96,13 @@ func main() {
 		mgr.Register(screen.ScreenSuccess, vendingApp.successScreen)
 		mgr.Register(screen.ScreenPaymentFailed, vendingApp.paymentFailedScreen)
 	}
- 
+
 	// Initialize vending API client
 	var mockMode bool
 	if cfg.API.URL != "" {
-		vendingApp.vendingClient = vending.NewClient(cfg.API.URL)
-		log.Printf("Vending API client initialized: %s", cfg.API.URL)
+		product := cfg.Vending.Product
+		vendingApp.vendingClient = vending.NewClient(cfg.API.URL, cfg.API.Username, cfg.API.Password, product)
+		log.Printf("Vending API client initialized: %s (product: %s)", cfg.API.URL, product)
 		vending.SetGlobalProcessor(vendingApp)
 		mockMode = false
 	} else {
@@ -110,19 +110,19 @@ func main() {
 		vending.SetGlobalProcessor(&vending.MockProcessor{ShouldFail: false})
 		mockMode = true
 	}
- 
+
 	if vendingApp.Base.Display != nil {
 		vendingApp.Base.Display.Manager().SetMockMode(mockMode)
 	}
- 
+
 	if *openflag {
 		vendingApp.Base.OpenDoor(&indicator.AccessInfo{Member: "holdopen"}, cfg.WaitSecs, 0, 0)
 		select {} // Block forever
 	}
- 
+
 	vendingApp.Base.Run()
 }
- 
+
 func (app *VendingApp) OnMQTTConnect() {
 	// Subscribe to node-specific open command
 	openTopic := fmt.Sprintf("ratt/control/node/%s/open", app.Base.Cfg.ClientID)
@@ -130,48 +130,48 @@ func (app *VendingApp) OnMQTTConnect() {
 		log.Printf("Subscribe error: %v", err)
 	}
 }
- 
+
 func (app *VendingApp) OnMQTTMessage(topic string, payload []byte) {
 	openTopic := fmt.Sprintf("ratt/control/node/%s/open", app.Base.Cfg.ClientID)
 	if topic == openTopic {
 		app.handleOpenRequest(payload)
 	}
 }
- 
+
 func (app *VendingApp) handleOpenRequest(payload []byte) {
 	if app.Base.Cfg.OpenSecret == "" || app.Base.Cfg.OpenToolName == "" {
 		log.Println("Remote open disabled (no secret or tool name configured)")
 		return
 	}
- 
+
 	var req OpenRequest
 	if err := json.Unmarshal(payload, &req); err != nil {
 		log.Printf("Decode open request: %v", err)
 		return
 	}
- 
+
 	if err := auth.VerifySignature(app.Base.Cfg.OpenSecret, req.Member, req.ToolName, req.Timestamp, req.Signature); err != nil {
 		log.Printf("Signature verification failed: %v", err)
 		return
 	}
- 
+
 	if req.ToolName != app.Base.Cfg.OpenToolName {
 		log.Printf("Wrong tool name %q, expected %q", req.ToolName, app.Base.Cfg.OpenToolName)
 		return
 	}
- 
+
 	// Check timestamp is within 5 minute window
 	ts := time.Unix(int64(req.Timestamp), 0)
 	if time.Since(ts) > 5*time.Minute || time.Until(ts) > 5*time.Minute {
 		log.Println("Open request timestamp out of range")
 		return
 	}
- 
+
 	log.Printf("Remote open request from %s", req.Member)
 	app.Base.PublishAccess(req.Member, true)
 	app.Base.OpenDoor(&indicator.AccessInfo{Member: req.Member, Allowed: true}, app.Base.Cfg.WaitSecs, 0, 0)
 }
- 
+
 func (app *VendingApp) HandleTag(tagID uint64, record acl.ACLRecord, found bool) {
 	rfidData := screen.RFIDData{
 		TagID:    tagID,
@@ -181,7 +181,7 @@ func (app *VendingApp) HandleTag(tagID uint64, record acl.ACLRecord, found bool)
 		Warning:  record.Warning,
 		Allowed:  record.Allowed,
 	}
- 
+
 	authorized := found && record.Allowed
 	var evt screen.Event
 	if authorized {
@@ -189,14 +189,14 @@ func (app *VendingApp) HandleTag(tagID uint64, record acl.ACLRecord, found bool)
 	} else {
 		evt = screen.Event{Type: screen.EventDenied, Data: rfidData}
 	}
- 
+
 	// Send event to current screen - if handled, skip default processing
 	if app.Base.Display != nil {
 		if app.Base.Display.SendEvent(evt) {
 			return
 		}
 	}
- 
+
 	if !authorized {
 		if !found {
 			log.Printf("Tag %d not found in ACL", tagID)
@@ -209,7 +209,7 @@ func (app *VendingApp) HandleTag(tagID uint64, record acl.ACLRecord, found bool)
 			Warning:  record.Warning,
 			Allowed:  record.Allowed,
 		})
- 
+
 		if app.Base.Display != nil {
 			warning := "Unknown Tag"
 			if found {
@@ -225,9 +225,9 @@ func (app *VendingApp) HandleTag(tagID uint64, record acl.ACLRecord, found bool)
 		}
 		return
 	}
- 
+
 	log.Printf("Tag %d: member=%s allowed", tagID, record.Member)
- 
+
 	// Start vending session instead of opening door
 	if app.Base.Display != nil {
 		balance := 0.0
@@ -241,7 +241,7 @@ func (app *VendingApp) HandleTag(tagID uint64, record acl.ACLRecord, found bool)
 				log.Printf("Failed to query balance for %s: %v", record.Member, err)
 			}
 		}
- 
+
 		app.Base.Display.Manager().SetVendingSession(record.Member, record.Nickname, 1.00)
 		app.Base.Display.Manager().SetVendingAddAmount(0)
 		app.startVendingSession(record.Member, record.Nickname, balance, lastLog)
@@ -256,6 +256,6 @@ func (app *VendingApp) HandleTag(tagID uint64, record acl.ACLRecord, found bool)
 		}, app.Base.Cfg.WaitSecs, 0, 0)
 	}
 }
- 
+
 func (app *VendingApp) HandleExternalEvent(evt screen.Event) {
 }

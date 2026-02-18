@@ -14,16 +14,30 @@ import (
 type Client struct {
 	BaseURL    string
 	HTTPClient *http.Client
+	username   string
+	password   string
+	product    string
 }
 
 // NewClient creates a new vending API client
-func NewClient(baseURL string) *Client {
+func NewClient(baseURL, username, password, product string) *Client {
 	return &Client{
-		BaseURL: baseURL,
+		BaseURL:  baseURL,
+		username: username,
+		password: password,
+		product:  product,
 		HTTPClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
 	}
+}
+
+// applyAuth sets HTTP Basic Auth if configured.
+func (c *Client) applyAuth(req *http.Request) {
+	if c.username == "" && c.password == "" {
+		return
+	}
+	req.SetBasicAuth(c.username, c.password)
 }
 
 // BalanceResponse represents the response from queryBalance
@@ -77,7 +91,13 @@ type ReupResponse struct {
 func (c *Client) QueryBalance(member string) (*BalanceResponse, error) {
 	url := fmt.Sprintf("%s/api/v2/vending/queryBalance/%s", c.BaseURL, member)
 
-	resp, err := c.HTTPClient.Get(url)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	c.applyAuth(req)
+
+	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -106,6 +126,9 @@ func (c *Client) QueryBalance(member string) (*BalanceResponse, error) {
 
 // ChargeAccount charges a member's account for a purchase
 func (c *Client) ChargeAccount(member string, req ChargeRequest) (*ChargeResponse, error) {
+	if c.product != "" {
+		req.Product = c.product
+	}
 	url := fmt.Sprintf("%s/api/v2/vending/chargeAccount/%s", c.BaseURL, member)
 
 	jsonData, err := json.Marshal(req)
@@ -118,6 +141,7 @@ func (c *Client) ChargeAccount(member string, req ChargeRequest) (*ChargeRespons
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	c.applyAuth(httpReq)
 
 	resp, err := c.HTTPClient.Do(httpReq)
 	if err != nil {
@@ -148,6 +172,9 @@ func (c *Client) ChargeAccount(member string, req ChargeRequest) (*ChargeRespons
 
 // ReupBalance adds funds to a member's account and processes a purchase
 func (c *Client) ReupBalance(member string, req ReupRequest) (*ReupResponse, error) {
+	if c.product != "" {
+		req.ProductCode = c.product
+	}
 	url := fmt.Sprintf("%s/api/v2/vending/reupBalance/%s", c.BaseURL, member)
 
 	jsonData, err := json.Marshal(req)
@@ -160,6 +187,7 @@ func (c *Client) ReupBalance(member string, req ReupRequest) (*ReupResponse, err
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	c.applyAuth(httpReq)
 
 	resp, err := c.HTTPClient.Do(httpReq)
 	if err != nil {

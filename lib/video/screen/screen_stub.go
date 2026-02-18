@@ -171,5 +171,6 @@ func (m *Manager) SetVendingLastLog(lastLog int)                             {}
 func (m *Manager) GetVendingLastLog() int                                    { return 0 }
 func (m *Manager) SetStopAudioFn(fn func())                                  {}
 func (m *Manager) SetPlayAudioFn(fn func(filename string))                   {}
+func (m *Manager) SetPlayAudioBytesFn(fn func(pcm []byte))                   {}
 func (m *Manager) PlayAudio(filename string)                                 {}
 func (m *Manager) PlayAudioBytes(pcm []byte)                                 {}
