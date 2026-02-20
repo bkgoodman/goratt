@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"goratt/cmd/vending/assets"
 	"goratt/lib/video/screen"
 )
 
@@ -42,7 +43,7 @@ func (s *PaymentFailedScreen) Init(mgr *screen.Manager) {
 	})
 
 	// Play purchase audio
-	s.mgr.PlayAudio("error_16.pcm")
+	s.mgr.PlayAudioBytes(assets.Audio_error)
 }
 
 func (s *PaymentFailedScreen) Update() {

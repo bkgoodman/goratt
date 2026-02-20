@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"goratt/lib/video/screen"
+	"goratt/cmd/vending/assets"
 )
 
 // SuccessScreen displays payment success.
@@ -42,7 +43,7 @@ func (s *SuccessScreen) Init(mgr *screen.Manager) {
 	})
 
 	// Play purchase audio
-	s.mgr.PlayAudio("complete_16.pcm")
+	s.mgr.PlayAudioBytes(assets.Audio_complete)
 }
 
 func (s *SuccessScreen) Update() {
