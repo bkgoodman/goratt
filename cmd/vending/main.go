@@ -250,6 +250,7 @@ func (app *VendingApp) HandleTag(tagID uint64, record acl.ACLRecord, found bool)
 
 		app.Base.Display.Manager().SetVendingSession(record.Member, record.Nickname, 1.00)
 		app.Base.Display.Manager().SetVendingAddAmount(0)
+		app.Base.Display.Manager().SetVendingBalance(balance)
 		app.startVendingSession(record.Member, record.Nickname, balance, lastLog)
 		app.Base.Display.Manager().SwitchTo(screen.ScreenSelectAmount)
 	} else {

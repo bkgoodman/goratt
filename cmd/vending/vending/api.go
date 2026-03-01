@@ -261,8 +261,8 @@ func (c *Client) ProcessPurchase(session *VendingSession) error {
 	totalChargeCents := addAmountCents + serviceFeeCents
 	newBalanceCents := balanceCents + addAmountCents - amountCents
 
-	log.Printf("Processing purchase: Member=%s, Amount=$%.2f, AddAmount=$%.2f, Fee=$%.2f",
-		session.Member, session.Amount, session.AddAmount, session.ServiceFee)
+	log.Printf("Processing purchase: Member=%s, Amount=$%.2f, AddAmount=$%.2f, Fee=$%.2f, PriorBalance=$%2.f (%d cents)",
+		session.Member, session.Amount, session.AddAmount, session.ServiceFee, session.Balance, balanceCents)
 
 	if session.AddAmount > 0 {
 		// Use reupBalance when adding funds

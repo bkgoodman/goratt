@@ -287,7 +287,7 @@ func (m *Manager) SetVendingSession(member, nickname string, amount float64) {
 	m.vendingMember = member
 	m.vendingNickname = nickname
 	m.vendingAmount = amount
-	m.vendingBalance = 1.00 // Mock balance for testing
+	m.vendingBalance = 0
 	m.vendingAddAmount = 0
 }
 

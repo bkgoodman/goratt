@@ -45,8 +45,8 @@ func (app *VendingApp) ProcessPayment() error {
 		LastLog:    lastLog,
 	}
 
-	log.Printf("Processing payment: Member=%s, Amount=$%.2f, AddAmount=$%.2f, Fee=$%.2f",
-		session.Member, session.Amount, session.AddAmount, session.ServiceFee)
+	log.Printf("Processing payment: Member=%s, Amount=$%.2f, AddAmount=$%.2f, Fee=$%.2f Balance=%2.f",
+		session.Member, session.Amount, session.AddAmount, session.ServiceFee, session.Balance)
 
 	// Process the payment
 	if err := app.vendingClient.ProcessPurchase(session); err != nil {
