@@ -33,7 +33,7 @@ func (s *RoomInUseScreen) Init(mgr *screen.Manager) {
  
 func (s *RoomInUseScreen) scheduleUpdate() {
 	s.timerID = s.mgr.SetTimeout(time.Minute, func(scr screen.Screen) {
-		s.mgr.Update()
+		s.Update()
 		s.scheduleUpdate()
 	})
 }

@@ -141,7 +141,7 @@ func (s *VendingIdleScreen) startIPRefresh() {
 		if !s.shouldShowIPForScreen() {
 			// Time's up and not forced, do a full redraw to remove the IP bar
 			s.ipTimerID = 0
-			s.mgr.Update()
+			s.Update()
 			return
 		}
 
@@ -336,10 +336,10 @@ func (s *VendingIdleScreen) HandleEvent(event screen.Event) bool {
 					s.ipTimerID = 0
 				}
 				s.ipHideTimerID = 0
-				s.mgr.Update() // Full redraw to hide IP bar
+				s.Update() // Full redraw to hide IP bar
 			})
 		}
-		s.mgr.Update() // Full redraw to show/hide IP bar
+		s.Update() // Full redraw to show/hide IP bar
 		return true
 	case screen.EventMQTTConnected:
 		s.updateMQTTIndicator()
