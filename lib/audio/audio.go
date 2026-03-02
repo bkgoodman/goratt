@@ -29,8 +29,8 @@ type AudioManager struct {
 
 // NewAudioManager creates a new audio manager.
 func NewAudioManager(params Params, device string) *AudioManager {
-	if device == "" {
-		device = "default"
+	if device == "default" {
+		device = ""
 	}
 	return &AudioManager{
 		stopCh:   make(chan struct{}),
@@ -59,7 +59,11 @@ func (am *AudioManager) PlayBuffer(data []byte) {
 	am.mu.Lock()
 	// Use '-' to read from stdin, or just omit the filename argument for aplay to read from stdin by default
 	// The -B 1 reduces buffer time to minimize latency
-	am.cmd = exec.Command("aplay", "-f", am.format, "-r", fmt.Sprintf("%d", am.rate), "-t", am.typ, "-c", fmt.Sprintf("%d", am.channels), "-D", am.device)
+	args := []string{"-f", am.format, "-r", fmt.Sprintf("%d", am.rate), "-t", am.typ, "-c", fmt.Sprintf("%d", am.channels)}
+	if am.device != "" {
+		args = append(args, "-D", am.device)
+	}
+	am.cmd = exec.Command("aplay", args...)
 	cmd := am.cmd
  
 	stdin, err := cmd.StdinPipe()
@@ -108,7 +112,12 @@ func (am *AudioManager) PlayPCM(filename string) {
 	am.Stop()
 
 	am.mu.Lock()
-	am.cmd = exec.Command("aplay", "-f", am.format, "-r", fmt.Sprintf("%d", am.rate), "-c", fmt.Sprintf("%d", am.channels), "-D", am.device, filename)
+	args := []string{"-f", am.format, "-r", fmt.Sprintf("%d", am.rate), "-c", fmt.Sprintf("%d", am.channels)}
+	if am.device != "" {
+		args = append(args, "-D", am.device)
+	}
+	args = append(args, filename)
+	am.cmd = exec.Command("aplay", args...)
 	cmd := am.cmd
 	am.mu.Unlock()
 

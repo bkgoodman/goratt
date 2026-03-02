@@ -154,7 +154,15 @@ func (m *Manager) SwitchTo(id ScreenID) {
 	m.mu.Unlock()
 
 	if stillCurrent {
-		screen.Update()
+		// Call initial Update in a goroutine to avoid recursive deadlock if 
+		// SwitchTo was called from a context that already holds drawMu 
+		// (like HandleEvent or a Timer callback). The update will execute
+		// as soon as the current holder releases the lock.
+		go func() {
+			m.drawMu.Lock()
+			defer m.drawMu.Unlock()
+			screen.Update()
+		}()
 	}
 }
 
@@ -302,10 +310,10 @@ func (m *Manager) SetVendingSession(member, nickname string, amount float64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.vendingMember = member
-	m.vendingNickname = nickname
+	if nickname != "" {
+		m.vendingNickname = nickname
+	}
 	m.vendingAmount = amount
-	m.vendingBalance = 0
-	m.vendingAddAmount = 0
 }
 
 // GetVendingSession returns the current vending session info.
