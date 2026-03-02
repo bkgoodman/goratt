@@ -28,3 +28,6 @@ darkroom_arm64_screen
 doorlock_arm64
 doorlock_arm64_screen
 vending_arm64_screen
+api.py
+vendingerr.txt
+vendingerr2.txt

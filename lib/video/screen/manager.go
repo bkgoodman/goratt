@@ -50,10 +50,18 @@ type screenTimer struct {
 //
 // Thread safety:
 //   - SetTimeout, ClearTimeout, SwitchTo, SendEvent are safe to call from any goroutine
-//   - Drawing methods (DC, Flush, FlushRect, etc.) are NOT mutex-protected;
-//     only the current screen should draw, and only from its callbacks
+//   - Drawing methods are protected by drawMu; this prevents concurrent access to
+//     the gg.Context which is not internally thread-safe
+//
+// # Draw Mutex (drawMu) Usage
+//
+// The drawMu protects the gg.Context (dc) from concurrent access. It is held
+// during the entire Update() and HandleEvent() calls, and around all drawing
+// helper methods. This prevents crashes from timer goroutine callbacks drawing
+// concurrently with screen transitions or input handling.
 type Manager struct {
 	mu            sync.Mutex // Protects current, screens, timers, nextTimerID, mqttConnected
+	drawMu        sync.Mutex // Protects gg.Context (dc) from concurrent drawing
 	current       Screen
 	screens       map[ScreenID]Screen
 	dc            *gg.Context
@@ -134,7 +142,10 @@ func (m *Manager) SwitchTo(id ScreenID) {
 	m.current = screen
 	m.mu.Unlock()
 
-	// Call Init and Update outside the lock to allow SetTimeout to work
+	// Call Init and Update outside the state lock to allow SetTimeout to work.
+	// NOTE: Do NOT hold drawMu here — Init() may call SwitchTo() recursively
+	// (e.g. ConfirmScreen.Init detects insufficient funds and switches screens).
+	// Timer callbacks are protected by drawMu separately in SetTimeout.
 	screen.Init(m)
 
 	// Check if we're still the current screen after Init (Init might have switched)
@@ -163,8 +174,12 @@ func (m *Manager) SendEvent(event Event) bool {
 	if current == nil {
 		return false
 	}
-	// Call HandleEvent outside the lock to allow it to call Update/SwitchTo
-	return current.HandleEvent(event)
+	// Call HandleEvent outside the lock to allow it to call Update/SwitchTo.
+	// Hold drawMu since event handlers may trigger drawing.
+	m.drawMu.Lock()
+	result := current.HandleEvent(event)
+	m.drawMu.Unlock()
+	return result
 }
 
 // Update forces a redraw of the current screen.
@@ -174,7 +189,9 @@ func (m *Manager) Update() {
 	m.mu.Unlock()
 
 	if current != nil {
+		m.drawMu.Lock()
 		current.Update()
+		m.drawMu.Unlock()
 	}
 }
 
@@ -379,9 +396,13 @@ func (m *Manager) SetTimeout(d time.Duration, callback TimerCallback) TimerID {
 		delete(m.timers, id)
 		m.mu.Unlock()
 
-		// Call callback outside of lock
+		// Call callback outside of state lock, but hold drawMu to prevent
+		// concurrent drawing. Timer callbacks may draw (e.g. updateAmountsDisplay)
+		// and must not race with SwitchTo/Init/Update on the main goroutine.
 		if callback != nil {
+			m.drawMu.Lock()
 			callback(screen)
+			m.drawMu.Unlock()
 		}
 	})
 

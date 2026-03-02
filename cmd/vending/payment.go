@@ -41,7 +41,7 @@ func (app *VendingApp) ProcessPayment() error {
 		Balance:    balance,
 		Amount:     amount,
 		AddAmount:  addAmount,
-		ServiceFee: 0.30, // $0.30 service fee (could be configurable)
+		ServiceFee: 0, // No service fee
 		LastLog:    lastLog,
 	}
 
