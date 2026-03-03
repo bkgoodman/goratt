@@ -34,6 +34,7 @@ type Handler interface {
 // BaseApp provides the common framework for GoRATT applications.
 type BaseApp struct {
 	Cfg       *config.Config
+  BuildID   string
 	MQTT      *mqtt.Client
 	Reader    reader.TagReader
 	Door      door.DoorOpener
@@ -53,7 +54,7 @@ type BaseApp struct {
 }
 
 // NewBaseApp creates and initializes the core application components.
-func NewBaseApp(cfg *config.Config, audioParams *audio.Params, handler Handler) *BaseApp {
+func NewBaseApp(cfg *config.Config, audioParams *audio.Params, handler Handler, Build string) *BaseApp {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	app := &BaseApp{
@@ -61,6 +62,7 @@ func NewBaseApp(cfg *config.Config, audioParams *audio.Params, handler Handler) 
 		Ctx:     ctx,
 		Cancel:  cancel,
 		Handler: handler,
+    BuildID: Build,
 	}
 
 	var err error
@@ -198,7 +200,16 @@ func (app *BaseApp) Shutdown() {
 	fmt.Println("Shutdown complete")
 }
 
+var firstMessageSent = false
+
 func (app *BaseApp) onMQTTConnect() {
+  // Sent startup message
+  if (!firstMessageSent) {
+    topic := fmt.Sprintf("ratt/status/node/%s/system/boot", app.Cfg.ClientID)
+    message := fmt.Sprintf(`{"fw_name":"goratt", "fw_version":"%s"}`, app.BuildID)
+    app.MQTT.Publish(topic, message)
+    firstMessageSent=true
+  }
 	app.Indicator.Idle()
 	if app.Display != nil {
 		app.Display.SetMQTTConnected(true)

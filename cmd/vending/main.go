@@ -69,7 +69,7 @@ func main() {
 		Type:     "raw",
 		Channels: 1,
 	}
-	vendingApp.Base = app.NewBaseApp(&cfg.Config, &audioParams, vendingApp)
+	vendingApp.Base = app.NewBaseApp(&cfg.Config, &audioParams, vendingApp, myBuild)
 	if vendingApp.Base.IdleScreen != nil {
 		vendingApp.Base.IdleScreen.SetBuildID(myBuild)
 	}
