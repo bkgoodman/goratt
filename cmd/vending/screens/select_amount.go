@@ -43,7 +43,7 @@ type SelectAmountScreen struct {
 // NewSelectAmountScreen creates a new select amount screen.
 func NewSelectAmountScreen() *SelectAmountScreen {
 	return &SelectAmountScreen{
-		minAmount:      0.75,
+		minAmount:      0.50,
 		maxAmount:      5.00,
 		step:           0.25,
 		timeoutPeriod:  30 * time.Second,
