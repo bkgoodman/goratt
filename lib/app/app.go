@@ -214,6 +214,12 @@ func (app *BaseApp) onMQTTConnect() {
 	if app.Display != nil {
 		app.Display.SetMQTTConnected(true)
 	}
+	
+	// Subscribe to the global broadcast topic for ACL updates
+	if err := app.MQTT.Subscribe("ratt/control/broadcast/acl/update"); err != nil {
+		log.Printf("Subscribe to broadcast ACL update error: %v", err)
+	}
+
 	if app.Handler != nil {
 		app.Handler.OnMQTTConnect()
 	}
