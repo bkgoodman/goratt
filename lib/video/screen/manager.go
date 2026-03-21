@@ -91,18 +91,33 @@ type Manager struct {
 	playAudioFn func(filename string)
 	// Audio play bytes function
 	playAudioBytesFn func(pcm []byte)
+
+	// Debounce state for rotary encoder combo moves
+	lastTurnTime       time.Time     // When the last turn occurred
+	lastTurnDelta      int           // Direction of the last turn
+	turnPressThreshold time.Duration // Window for canceling accidental turns before a press
 }
 
 // NewManager creates a new screen manager.
 func NewManager(dc *gg.Context, width, height int, updateFn func()) *Manager {
 	return &Manager{
-		dc:       dc,
-		width:    width,
-		height:   height,
-		updateFn: updateFn,
-		screens:  make(map[ScreenID]Screen),
-		timers:   make(map[TimerID]*screenTimer),
+		dc:                 dc,
+		width:              width,
+		height:             height,
+		updateFn:           updateFn,
+		screens:            make(map[ScreenID]Screen),
+		timers:             make(map[TimerID]*screenTimer),
+		turnPressThreshold: 150 * time.Millisecond,
 	}
+}
+
+// SetTurnPressThreshold sets the maximum time between a turn and a press
+// to consider them an accidental jiggle (which cancels the turn).
+// Set to 0 to disable this behavior.
+func (m *Manager) SetTurnPressThreshold(d time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.turnPressThreshold = d
 }
 
 // SetUpdateRectFn sets the function for partial screen updates.
@@ -177,6 +192,30 @@ func (m *Manager) Current() Screen {
 func (m *Manager) SendEvent(event Event) bool {
 	m.mu.Lock()
 	current := m.current
+	
+	// Handle rotary debounce state updates while under lock
+	var injectCompensatingTurn *Event
+	if event.Type == EventRotaryTurn {
+		if rotary := event.Rotary(); rotary != nil {
+			m.lastTurnTime = time.Now()
+			m.lastTurnDelta = rotary.Delta
+		}
+	} else if event.Type == EventRotaryPress {
+		if rotary := event.Rotary(); rotary != nil && m.turnPressThreshold > 0 {
+			if time.Since(m.lastTurnTime) <= m.turnPressThreshold {
+				// User probably jiggled the knob while trying to press the button.
+				// Inject a synthetic reverse-turn to undo the accident.
+				log.Printf("Screen: Canceling accidental rotary turn (delta: %d) because press arrived within %v", m.lastTurnDelta, m.turnPressThreshold)
+				compEvent := Event{
+					Type: EventRotaryTurn,
+					Data: RotaryData{ID: rotary.ID, Delta: -m.lastTurnDelta},
+				}
+				injectCompensatingTurn = &compEvent
+				// Clear the time so we don't double-compensate
+				m.lastTurnTime = time.Time{}
+			}
+		}
+	}
 	m.mu.Unlock()
 
 	if current == nil {
@@ -184,10 +223,15 @@ func (m *Manager) SendEvent(event Event) bool {
 	}
 	// Call HandleEvent outside the lock to allow it to call Update/SwitchTo.
 	// Hold drawMu since event handlers may trigger drawing.
+	
 	m.drawMu.Lock()
-	result := current.HandleEvent(event)
-	m.drawMu.Unlock()
-	return result
+	defer m.drawMu.Unlock()
+	
+	if injectCompensatingTurn != nil {
+		current.HandleEvent(*injectCompensatingTurn)
+	}
+	
+	return current.HandleEvent(event)
 }
 
 // Update forces a redraw of the current screen.
