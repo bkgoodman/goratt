@@ -34,6 +34,11 @@ func (app *VendingApp) ProcessPayment() error {
 	addAmount := mgr.GetVendingAddAmount()
 	lastLog := mgr.GetVendingLastLog()
 
+	fee := 0.0
+	if addAmount > 0 && addAmount < 5.0 {
+		fee = 0.30
+	}
+
 	// Create vending session for API
 	session := &vending.VendingSession{
 		Member:     member,
@@ -41,7 +46,7 @@ func (app *VendingApp) ProcessPayment() error {
 		Balance:    balance,
 		Amount:     amount,
 		AddAmount:  addAmount,
-		ServiceFee: 0, // No service fee
+		ServiceFee: fee, // Added dynamic fee calculation
 		LastLog:    lastLog,
 	}
 

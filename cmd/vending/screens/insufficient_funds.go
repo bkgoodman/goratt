@@ -140,7 +140,16 @@ func (s *InsufficientFundsScreen) drawAmounts() {
 
 	// Add amount (highlighted)
 	s.mgr.SetFontSize(32)
-	s.mgr.DrawCentered(fmt.Sprintf("Add: $%.2f", s.addAmount), centerY+20, 1, 1, 0)
+	s.mgr.DrawCentered(fmt.Sprintf("Add: $%.2f", s.addAmount), centerY+15, 1, 1, 0)
+
+	fee := 0.0
+	if s.addAmount > 0 && s.addAmount < 5.0 {
+		fee = 0.30
+	}
+	if fee > 0 {
+		s.mgr.SetFontSize(16)
+		s.mgr.DrawCentered(fmt.Sprintf("+ $%.2f Service Fee", fee), centerY+40, 1, 0.8, 0.8)
+	}
 
 	// Remaining after transaction
 	remaining := s.balance + s.addAmount - s.purchaseAmount
@@ -149,7 +158,7 @@ func (s *InsufficientFundsScreen) drawAmounts() {
 	if remaining >= 0 {
 		remainingColor = 1.0 // Bright if positive
 	}
-	s.mgr.DrawCentered(fmt.Sprintf("After: $%.2f", remaining), centerY+60, remainingColor, 1, remainingColor)
+	s.mgr.DrawCentered(fmt.Sprintf("After: $%.2f", remaining), centerY+65, remainingColor, 1, remainingColor)
 }
 
 // updateAmountsDisplay does a partial update of just the amounts area

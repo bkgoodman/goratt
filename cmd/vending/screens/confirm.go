@@ -90,16 +90,28 @@ func (s *ConfirmScreen) Update() {
 
 	// If adding funds, show both amounts separately
 	if s.addAmount > 0 {
+		fee := 0.0
+		if s.addAmount < 5.0 {
+			fee = 0.30
+		}
+
 		s.mgr.SetFontSize(24)
-		s.mgr.DrawCentered(fmt.Sprintf("Purchase: $%.2f", s.amount), centerY-10, 1, 1, 1)
-		s.mgr.DrawCentered(fmt.Sprintf("Adding: $%.2f", s.addAmount), centerY+20, 1, 1, 0)
+		s.mgr.DrawCentered(fmt.Sprintf("Purchase: $%.2f", s.amount), centerY-20, 1, 1, 1)
+		s.mgr.DrawCentered(fmt.Sprintf("Adding: $%.2f", s.addAmount), centerY+10, 1, 1, 0)
+		
+		if fee > 0 {
+			s.mgr.SetFontSize(16)
+			s.mgr.DrawCentered(fmt.Sprintf("+ $%.2f Service Fee", fee), centerY+30, 1, 0.8, 0.8)
+		}
 
 		// Show total and remaining
 		totalBalance := s.balance + s.addAmount
 		remaining := totalBalance - s.amount
+		totalCharge := s.addAmount + fee
+		
 		s.mgr.SetFontSize(20)
 		s.mgr.DrawCentered(fmt.Sprintf("New Balance: $%.2f", remaining), centerY+55, 0.8, 1, 0.8)
-		s.mgr.DrawCentered("I consent to charge my card on-file", float64(s.mgr.Height()/2)+155, 0.9, 0.9, 0.9)
+		s.mgr.DrawCentered(fmt.Sprintf("I consent to charge $%.2f", totalCharge), float64(s.mgr.Height()/2)+155, 0.9, 0.9, 0.9)
 	} else {
 		// Just purchase, no add
 		s.mgr.SetFontSize(64)
