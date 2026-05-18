@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/fogleman/gg"
+	"github.com/golang/freetype/truetype"
 )
 
 // TimerID uniquely identifies a timer.
@@ -288,10 +289,10 @@ func (m *Manager) FillRect(x, y, w, h int, r, g, b float64) {
 
 // SetFontSize loads a font at the specified size.
 func (m *Manager) SetFontSize(size int) {
-	fontPath := "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-	if err := m.dc.LoadFontFace(fontPath, float64(size)); err != nil {
-		log.Printf("Screen: failed to load font: %v", err)
-	}
+	face := truetype.NewFace(embeddedFont, &truetype.Options{
+		Size: float64(size),
+	})
+	m.dc.SetFontFace(face)
 }
 
 // DrawCentered draws centered text at the given y position.
