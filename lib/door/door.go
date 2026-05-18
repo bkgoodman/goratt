@@ -1,11 +1,6 @@
 package door
 
-import (
-	"fmt"
-	"log"
-
-	"github.com/hjkoskel/govattu"
-)
+import "fmt"
 
 // DoorOpener is the interface for all door control implementations.
 type DoorOpener interface {
@@ -33,24 +28,16 @@ func New(cfg Config) (DoorOpener, error) {
 		return &Noop{}, nil
 	}
 
-	hw, err := govattu.Open()
-	if err != nil {
-		return nil, fmt.Errorf("open gpio: %w", err)
-	}
-
 	switch cfg.Type {
 	case "servo":
-		return NewServo(hw, uint8(*cfg.Pin), cfg.ServoOpen, cfg.ServoClose)
+		return NewServo(*cfg.Pin, cfg.ServoOpen, cfg.ServoClose)
 	case "gpio_high", "openhigh":
-		return NewGPIO(hw, uint8(*cfg.Pin), true)
+		return NewGPIO(*cfg.Pin, true)
 	case "gpio_low", "openlow":
-		return NewGPIO(hw, uint8(*cfg.Pin), false)
+		return NewGPIO(*cfg.Pin, false)
 	case "none":
-		if err := hw.Close(); err != nil {
-			log.Printf("Warning: failed to close GPIO hardware: %v", err)
-		}
 		return &Noop{}, nil
 	default:
-		return nil, fmt.Errorf("invalid door type \"%s\"", cfg.Type)
+		return nil, fmt.Errorf("invalid door type %q", cfg.Type)
 	}
 }

@@ -1,30 +1,32 @@
 package door
 
 import (
+	"fmt"
 	"time"
 
-	"github.com/hjkoskel/govattu"
+	"periph.io/x/conn/v3/gpio"
+	"periph.io/x/conn/v3/gpio/gpioreg"
+	"periph.io/x/conn/v3/physic"
 )
 
 // Servo implements DoorOpener using PWM servo control.
 type Servo struct {
-	hw       govattu.Vattu
-	pin      uint8
+	pin      gpio.PinIO
 	openPos  int
 	closePos int
 	isOpen   bool
 }
 
 // NewServo creates a new servo-based door opener.
-func NewServo(hw govattu.Vattu, pin uint8, openPos, closePos int) (*Servo, error) {
-	hw.PinMode(pin, govattu.ALT5) // ALT5 for PWM0
-	hw.PwmSetMode(true, true, false, false)
-	hw.PwmSetClock(19)
-	hw.Pwm0SetRange(20000)
+func NewServo(pinNum int, openPos, closePos int) (*Servo, error) {
+	pinName := fmt.Sprintf("GPIO%d", pinNum)
+	p := gpioreg.ByName(pinName)
+	if p == nil {
+		return nil, fmt.Errorf("GPIO pin %s not found", pinName)
+	}
 
 	s := &Servo{
-		hw:       hw,
-		pin:      pin,
+		pin:      p,
 		openPos:  openPos,
 		closePos: closePos,
 		isOpen:   false,
@@ -51,11 +53,21 @@ func (s *Servo) Close() error {
 
 // Release implements DoorOpener.Release.
 func (s *Servo) Release() error {
-	return s.hw.Close()
+	return s.pin.Halt()
+}
+
+// posToDuty converts a servo position (pulse width in microseconds) to a PWM duty cycle
+// at 50Hz (20ms period). The position value represents microseconds of pulse width.
+func posToDuty(pos int) gpio.Duty {
+	// 50Hz = 20000us period. pos is in microseconds.
+	// duty = pos / 20000 * DutyMax
+	return gpio.Duty(int64(pos) * int64(gpio.DutyMax) / 20000)
 }
 
 func (s *Servo) moveTo(pos int) {
-	s.hw.Pwm0Set(uint32(pos))
+	duty := posToDuty(pos)
+	// 50Hz for standard servo control
+	s.pin.PWM(duty, 50*physic.Hertz)
 }
 
 func (s *Servo) moveFromTo(from, to int) {
@@ -64,7 +76,8 @@ func (s *Servo) moveFromTo(from, to int) {
 		inc = -1
 	}
 	for i := from; i != to; i += inc {
-		s.hw.Pwm0Set(uint32(i))
+		duty := posToDuty(i)
+		s.pin.PWM(duty, 50*physic.Hertz)
 		time.Sleep(2 * time.Millisecond)
 	}
 }

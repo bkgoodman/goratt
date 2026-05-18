@@ -1,25 +1,29 @@
 package door
 
 import (
+	"fmt"
 	"log"
 
-	"github.com/hjkoskel/govattu"
+	"periph.io/x/conn/v3/gpio"
+	"periph.io/x/conn/v3/gpio/gpioreg"
 )
 
 // GPIO implements DoorOpener using simple GPIO pin control.
 type GPIO struct {
-	hw       govattu.Vattu
-	pin      uint8
+	pin      gpio.PinIO
 	openHigh bool // true = set pin high to open, false = set pin low to open
 }
 
 // NewGPIO creates a new GPIO-based door opener.
-func NewGPIO(hw govattu.Vattu, pin uint8, openHigh bool) (*GPIO, error) {
-	hw.PinMode(pin, govattu.ALToutput)
+func NewGPIO(pinNum int, openHigh bool) (*GPIO, error) {
+	pinName := fmt.Sprintf("GPIO%d", pinNum)
+	p := gpioreg.ByName(pinName)
+	if p == nil {
+		return nil, fmt.Errorf("GPIO pin %s not found", pinName)
+	}
 
 	g := &GPIO{
-		hw:       hw,
-		pin:      pin,
+		pin:      p,
 		openHigh: openHigh,
 	}
 
@@ -33,24 +37,20 @@ func NewGPIO(hw govattu.Vattu, pin uint8, openHigh bool) (*GPIO, error) {
 // Open implements DoorOpener.Open.
 func (g *GPIO) Open() error {
 	if g.openHigh {
-		g.hw.PinSet(g.pin)
-	} else {
-		g.hw.PinClear(g.pin)
+		return g.pin.Out(gpio.High)
 	}
-	return nil
+	return g.pin.Out(gpio.Low)
 }
 
 // Close implements DoorOpener.Close.
 func (g *GPIO) Close() error {
 	if g.openHigh {
-		g.hw.PinClear(g.pin)
-	} else {
-		g.hw.PinSet(g.pin)
+		return g.pin.Out(gpio.Low)
 	}
-	return nil
+	return g.pin.Out(gpio.High)
 }
 
 // Release implements DoorOpener.Release.
 func (g *GPIO) Release() error {
-	return g.hw.Close()
+	return g.pin.Out(gpio.Low)
 }

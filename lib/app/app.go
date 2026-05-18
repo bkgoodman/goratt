@@ -21,6 +21,8 @@ import (
 	"goratt/lib/video"
 	"goratt/lib/video/screen"
 	"goratt/lib/video/screen/screens"
+
+	"periph.io/x/host/v3"
 )
 
 // Handler defines the hooks an application must implement to customize logic.
@@ -55,6 +57,11 @@ type BaseApp struct {
 
 // NewBaseApp creates and initializes the core application components.
 func NewBaseApp(cfg *config.Config, audioParams *audio.Params, handler Handler, Build string) *BaseApp {
+	// Initialize periph.io host drivers (must be called before any GPIO/PWM usage)
+	if _, err := host.Init(); err != nil {
+		log.Fatalf("Init periph.io host: %v", err)
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	app := &BaseApp{

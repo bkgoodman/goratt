@@ -8,14 +8,15 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/warthog618/go-gpiocdev"
+	"periph.io/x/conn/v3/gpio"
+	"periph.io/x/conn/v3/gpio/gpioreg"
 )
 
 // Rotary handles a rotary encoder input device.
 type Rotary struct {
-	dtLine         *gpiocdev.Line
-	clkLine        *gpiocdev.Line
-	btnLine        *gpiocdev.Line
+	dtPin          gpio.PinIO
+	clkPin         gpio.PinIO
+	btnPin         gpio.PinIO
 	lastCLK        int
 	lastDT         int
 	pos            int64
@@ -26,11 +27,12 @@ type Rotary struct {
 	btnPressTime   time.Time
 	longPressTimer *time.Timer
 	longPressFired bool
+	stopCh         chan struct{}
 }
 
 // Config holds configuration for a rotary encoder.
 type Config struct {
-	Chip      string `yaml:"chip"`
+	Chip      string `yaml:"chip"` // unused with periph.io, kept for config compat
 	CLKPin    int    `yaml:"clk_pin"`
 	DTPin     int    `yaml:"dt_pin"`
 	ButtonPin int    `yaml:"button_pin"`
@@ -52,144 +54,155 @@ func New(cfg Config, handlers Handlers) (*Rotary, error) {
 		return nil, nil
 	}
 
-	if cfg.Chip == "" {
-		cfg.Chip = "gpiochip0"
-	}
-
-	debounceRotary := 250 * time.Microsecond
-	debounceButton := 2 * time.Millisecond
-
 	r := &Rotary{
 		onTurn:      handlers.OnTurn,
 		onPress:     handlers.OnPress,
 		onLongPress: handlers.OnLongPress,
 		onButtonUp:  handlers.OnButtonUp,
+		stopCh:      make(chan struct{}),
 	}
 
-	var err error
-
-	// Request DT line
-	r.dtLine, err = gpiocdev.RequestLine(cfg.Chip, cfg.DTPin,
-		gpiocdev.WithPullUp,
-		gpiocdev.WithBothEdges,
-		gpiocdev.WithDebounce(debounceRotary),
-		gpiocdev.WithEventHandler(r.handleEvent))
-	if err != nil {
-		return nil, err
+	// Lookup DT pin
+	dtName := fmt.Sprintf("GPIO%d", cfg.DTPin)
+	r.dtPin = gpioreg.ByName(dtName)
+	if r.dtPin == nil {
+		return nil, fmt.Errorf("GPIO pin %s not found", dtName)
+	}
+	if err := r.dtPin.In(gpio.PullUp, gpio.BothEdges); err != nil {
+		return nil, fmt.Errorf("configure DT pin: %w", err)
 	}
 
-	// Request CLK line
-	r.clkLine, err = gpiocdev.RequestLine(cfg.Chip, cfg.CLKPin,
-		gpiocdev.WithPullUp,
-		gpiocdev.WithBothEdges,
-		gpiocdev.WithDebounce(debounceRotary),
-		gpiocdev.WithEventHandler(r.handleEvent))
-	if err != nil {
-		if err := r.dtLine.Close(); err != nil {
-			log.Printf("Warning: failed to close DT line: %v", err)
-		}
-		return nil, err
+	// Lookup CLK pin
+	clkName := fmt.Sprintf("GPIO%d", cfg.CLKPin)
+	r.clkPin = gpioreg.ByName(clkName)
+	if r.clkPin == nil {
+		return nil, fmt.Errorf("GPIO pin %s not found", clkName)
+	}
+	if err := r.clkPin.In(gpio.PullUp, gpio.BothEdges); err != nil {
+		r.dtPin.Halt()
+		return nil, fmt.Errorf("configure CLK pin: %w", err)
 	}
 
-	// Request button line if specified (both edges to detect press and release)
+	// Lookup button pin if specified
 	if cfg.ButtonPin > 0 {
-		r.btnLine, err = gpiocdev.RequestLine(cfg.Chip, cfg.ButtonPin,
-			gpiocdev.WithPullUp,
-			gpiocdev.WithBothEdges,
-			gpiocdev.WithDebounce(debounceButton),
-			gpiocdev.WithEventHandler(r.handleButton))
-		if err != nil {
-			if err := r.dtLine.Close(); err != nil {
-				log.Printf("Warning: failed to close DT line: %v", err)
-			}
-			if err := r.clkLine.Close(); err != nil {
-				log.Printf("Warning: failed to close CLK line: %v", err)
-			}
-			return nil, err
+		btnName := fmt.Sprintf("GPIO%d", cfg.ButtonPin)
+		r.btnPin = gpioreg.ByName(btnName)
+		if r.btnPin == nil {
+			r.dtPin.Halt()
+			r.clkPin.Halt()
+			return nil, fmt.Errorf("GPIO pin %s not found", btnName)
 		}
+		if err := r.btnPin.In(gpio.PullUp, gpio.BothEdges); err != nil {
+			r.dtPin.Halt()
+			r.clkPin.Halt()
+			return nil, fmt.Errorf("configure button pin: %w", err)
+		}
+	}
+
+	// Start polling goroutines for edge detection
+	go r.pollRotary()
+	if r.btnPin != nil {
+		go r.pollButton()
 	}
 
 	return r, nil
 }
 
-func (r *Rotary) handleEvent(evt gpiocdev.LineEvent) {
-	var newState int
-	switch evt.Type {
-	case gpiocdev.LineEventRisingEdge:
-		newState = 1
-	case gpiocdev.LineEventFallingEdge:
-		newState = 0
-	default:
-		return
-	}
+// pollRotary waits for edges on CLK and DT pins and decodes rotation.
+func (r *Rotary) pollRotary() {
+	for {
+		select {
+		case <-r.stopCh:
+			return
+		default:
+		}
 
-	switch evt.Offset {
-	case r.clkLine.Offset():
-		r.lastCLK = newState
-	case r.dtLine.Offset():
-		r.lastDT = newState
-	}
+		// Wait for edge on CLK pin (with timeout to allow shutdown)
+		if r.clkPin.WaitForEdge(100 * time.Millisecond) {
+			clkLevel := r.clkPin.Read()
+			dtLevel := r.dtPin.Read()
 
-	// Decode direction on CLK rising edge
-	if evt.Offset == r.clkLine.Offset() && evt.Type == gpiocdev.LineEventRisingEdge {
-		//fmt.Printf("Rotary %d\n", r.lastDT)
-		if r.lastDT == 0 {
-			atomic.AddInt64(&r.pos, 1)
-			if r.onTurn != nil {
-				r.onTurn(1)
+			newCLK := 0
+			if clkLevel == gpio.High {
+				newCLK = 1
 			}
-		} else {
-			atomic.AddInt64(&r.pos, -1)
-			if r.onTurn != nil {
-				r.onTurn(-1)
+			newDT := 0
+			if dtLevel == gpio.High {
+				newDT = 1
+			}
+
+			r.lastCLK = newCLK
+			r.lastDT = newDT
+
+			// Decode direction on CLK rising edge
+			if clkLevel == gpio.High {
+				if dtLevel == gpio.Low {
+					atomic.AddInt64(&r.pos, 1)
+					if r.onTurn != nil {
+						r.onTurn(1)
+					}
+				} else {
+					atomic.AddInt64(&r.pos, -1)
+					if r.onTurn != nil {
+						r.onTurn(-1)
+					}
+				}
 			}
 		}
 	}
 }
 
-func (r *Rotary) handleButton(evt gpiocdev.LineEvent) {
-	switch evt.Type {
-	case gpiocdev.LineEventFallingEdge:
-		// Button pressed - start long-press timer
-		r.btnPressTime = time.Now()
-		r.longPressFired = false
-		//fmt.Println("Button pressed")
-
-		// Start timer for long press
-		if r.longPressTimer != nil {
-			r.longPressTimer.Stop()
+// pollButton waits for edges on the button pin and handles press/release.
+func (r *Rotary) pollButton() {
+	for {
+		select {
+		case <-r.stopCh:
+			return
+		default:
 		}
-		r.longPressTimer = time.AfterFunc(1*time.Second, func() {
-			// Long press triggered after 1s hold
-			if !r.btnPressTime.IsZero() && !r.longPressFired {
-				r.longPressFired = true
-				if r.onLongPress != nil {
-					fmt.Println("Button long press")
-					r.onLongPress()
+
+		if r.btnPin.WaitForEdge(100 * time.Millisecond) {
+			level := r.btnPin.Read()
+
+			if level == gpio.Low {
+				// Button pressed (active low with pull-up)
+				r.btnPressTime = time.Now()
+				r.longPressFired = false
+
+				if r.longPressTimer != nil {
+					r.longPressTimer.Stop()
 				}
-			}
-		})
-	case gpiocdev.LineEventRisingEdge:
-		// Button released
-		if r.longPressTimer != nil {
-			r.longPressTimer.Stop()
-		}
+				r.longPressTimer = time.AfterFunc(1*time.Second, func() {
+					if !r.btnPressTime.IsZero() && !r.longPressFired {
+						r.longPressFired = true
+						if r.onLongPress != nil {
+							fmt.Println("Button long press")
+							r.onLongPress()
+						}
+					}
+				})
+			} else {
+				// Button released
+				if r.longPressTimer != nil {
+					r.longPressTimer.Stop()
+				}
 
-		if !r.btnPressTime.IsZero() && !r.longPressFired {
-			// Short press (released before 1s)
-			if r.onPress != nil {
-				//fmt.Println("Button short press")
-				r.onPress()
-			}
-		} else if r.longPressFired {
-			// Button released after long press fired
-			if r.onButtonUp != nil {
-				r.onButtonUp()
+				if !r.btnPressTime.IsZero() && !r.longPressFired {
+					// Short press
+					if r.onPress != nil {
+						r.onPress()
+					}
+				} else if r.longPressFired {
+					// Released after long press
+					if r.onButtonUp != nil {
+						r.onButtonUp()
+					}
+				}
+
+				r.btnPressTime = time.Time{}
+				r.longPressFired = false
 			}
 		}
-
-		r.btnPressTime = time.Time{}
-		r.longPressFired = false
 	}
 }
 
@@ -203,19 +216,20 @@ func (r *Rotary) Release() error {
 	if r.longPressTimer != nil {
 		r.longPressTimer.Stop()
 	}
-	if r.dtLine != nil {
-		if err := r.dtLine.Close(); err != nil {
-			log.Printf("Warning: failed to close DT line: %v", err)
+	close(r.stopCh)
+	if r.dtPin != nil {
+		if err := r.dtPin.Halt(); err != nil {
+			log.Printf("Warning: failed to halt DT pin: %v", err)
 		}
 	}
-	if r.clkLine != nil {
-		if err := r.clkLine.Close(); err != nil {
-			log.Printf("Warning: failed to close CLK line: %v", err)
+	if r.clkPin != nil {
+		if err := r.clkPin.Halt(); err != nil {
+			log.Printf("Warning: failed to halt CLK pin: %v", err)
 		}
 	}
-	if r.btnLine != nil {
-		if err := r.btnLine.Close(); err != nil {
-			log.Printf("Warning: failed to close button line: %v", err)
+	if r.btnPin != nil {
+		if err := r.btnPin.Halt(); err != nil {
+			log.Printf("Warning: failed to halt button pin: %v", err)
 		}
 	}
 	return nil

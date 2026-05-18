@@ -3,46 +3,55 @@ package indicator
 import (
 	"fmt"
 
-	"github.com/hjkoskel/govattu"
+	"periph.io/x/conn/v3/gpio"
+	"periph.io/x/conn/v3/gpio/gpioreg"
 )
 
 // GPIO implements Indicator using discrete GPIO LED pins.
 type GPIO struct {
-	hw        govattu.Vattu
-	greenPin  *uint8
-	yellowPin *uint8
-	redPin    *uint8
+	greenPin  gpio.PinIO
+	yellowPin gpio.PinIO
+	redPin    gpio.PinIO
 }
 
 // NewGPIO creates a new GPIO-based indicator.
-func NewGPIO(greenPin, yellowPin, redPin *uint8) (*GPIO, error) {
-	hw, err := govattu.Open()
-	if err != nil {
-		return nil, fmt.Errorf("open gpio: %w", err)
-	}
+func NewGPIO(greenPinNum, yellowPinNum, redPinNum *uint8) (*GPIO, error) {
+	g := &GPIO{}
 
-	g := &GPIO{
-		hw:        hw,
-		greenPin:  greenPin,
-		yellowPin: yellowPin,
-		redPin:    redPin,
+	var err error
+	if greenPinNum != nil {
+		g.greenPin, err = lookupPin(*greenPinNum)
+		if err != nil {
+			return nil, err
+		}
+		g.greenPin.Out(gpio.Low)
 	}
-
-	// Initialize all pins as outputs, start off
-	if greenPin != nil {
-		hw.PinMode(*greenPin, govattu.ALToutput)
-		hw.PinClear(*greenPin)
+	if yellowPinNum != nil {
+		g.yellowPin, err = lookupPin(*yellowPinNum)
+		if err != nil {
+			return nil, err
+		}
+		g.yellowPin.Out(gpio.Low)
 	}
-	if yellowPin != nil {
-		hw.PinMode(*yellowPin, govattu.ALToutput)
-		hw.PinClear(*yellowPin)
-	}
-	if redPin != nil {
-		hw.PinMode(*redPin, govattu.ALToutput)
-		hw.PinClear(*redPin)
+	if redPinNum != nil {
+		g.redPin, err = lookupPin(*redPinNum)
+		if err != nil {
+			return nil, err
+		}
+		g.redPin.Out(gpio.Low)
 	}
 
 	return g, nil
+}
+
+// lookupPin resolves a GPIO pin number to a periph.io PinIO.
+func lookupPin(num uint8) (gpio.PinIO, error) {
+	pinName := fmt.Sprintf("GPIO%d", num)
+	p := gpioreg.ByName(pinName)
+	if p == nil {
+		return nil, fmt.Errorf("GPIO pin %s not found", pinName)
+	}
+	return p, nil
 }
 
 // Idle implements Indicator.Idle.
@@ -54,7 +63,7 @@ func (g *GPIO) Idle() {
 func (g *GPIO) Granted(info *AccessInfo) {
 	g.allOff()
 	if g.greenPin != nil {
-		g.hw.PinSet(*g.greenPin)
+		g.greenPin.Out(gpio.High)
 	}
 }
 
@@ -62,7 +71,7 @@ func (g *GPIO) Granted(info *AccessInfo) {
 func (g *GPIO) Denied(info *AccessInfo) {
 	g.allOff()
 	if g.redPin != nil {
-		g.hw.PinSet(*g.redPin)
+		g.redPin.Out(gpio.High)
 	}
 }
 
@@ -70,7 +79,7 @@ func (g *GPIO) Denied(info *AccessInfo) {
 func (g *GPIO) Opening(info *AccessInfo) {
 	g.allOff()
 	if g.yellowPin != nil {
-		g.hw.PinSet(*g.yellowPin)
+		g.yellowPin.Out(gpio.High)
 	}
 }
 
@@ -79,10 +88,10 @@ func (g *GPIO) ConnectionLost() {
 	g.allOff()
 	// Blink yellow and red together for connection lost
 	if g.yellowPin != nil {
-		g.hw.PinSet(*g.yellowPin)
+		g.yellowPin.Out(gpio.High)
 	}
 	if g.redPin != nil {
-		g.hw.PinSet(*g.redPin)
+		g.redPin.Out(gpio.High)
 	}
 }
 
@@ -94,17 +103,27 @@ func (g *GPIO) Shutdown() {
 // Release implements Indicator.Release.
 func (g *GPIO) Release() error {
 	g.allOff()
-	return g.hw.Close()
+	// Halt all pins to release resources
+	if g.greenPin != nil {
+		g.greenPin.Halt()
+	}
+	if g.yellowPin != nil {
+		g.yellowPin.Halt()
+	}
+	if g.redPin != nil {
+		g.redPin.Halt()
+	}
+	return nil
 }
 
 func (g *GPIO) allOff() {
 	if g.greenPin != nil {
-		g.hw.PinClear(*g.greenPin)
+		g.greenPin.Out(gpio.Low)
 	}
 	if g.yellowPin != nil {
-		g.hw.PinClear(*g.yellowPin)
+		g.yellowPin.Out(gpio.Low)
 	}
 	if g.redPin != nil {
-		g.hw.PinClear(*g.redPin)
+		g.redPin.Out(gpio.Low)
 	}
 }
