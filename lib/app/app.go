@@ -62,6 +62,9 @@ func NewBaseApp(cfg *config.Config, audioParams *audio.Params, handler Handler, 
 		log.Fatalf("Init periph.io host: %v", err)
 	}
 
+	// Disable console cursor blink (shows through on framebuffer displays)
+	setConsoleCursorBlink(false)
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	app := &BaseApp{
@@ -107,6 +110,7 @@ func NewBaseApp(cfg *config.Config, audioParams *audio.Params, handler Handler, 
 
 		mgr := app.Display.Manager()
 		app.IdleScreen = screens.NewIdleScreen()
+		app.IdleScreen.SetBuildID(Build)
 		app.ShutdownScreen = screens.NewShutdownScreen()
 
 		mgr.Register(screen.ScreenIdle, app.IdleScreen)
@@ -204,7 +208,23 @@ func (app *BaseApp) Shutdown() {
 	if app.EventPipe != nil {
 		app.EventPipe.Close()
 	}
+
+	// Restore console cursor blink
+	setConsoleCursorBlink(true)
+
 	fmt.Println("Shutdown complete")
+}
+
+const cursorBlinkPath = "/sys/class/graphics/fbcon/cursor_blink"
+
+func setConsoleCursorBlink(on bool) {
+	val := "0"
+	if on {
+		val = "1"
+	}
+	if err := os.WriteFile(cursorBlinkPath, []byte(val), 0644); err != nil {
+		log.Printf("Warning: could not set console cursor blink: %v", err)
+	}
 }
 
 var firstMessageSent = false
