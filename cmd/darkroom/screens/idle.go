@@ -3,6 +3,7 @@
 package darkroomscreens
  
 import (
+	"log"
 	"time"
  
 	"goratt/lib/video/screen"
@@ -13,10 +14,29 @@ type DarkroomIdleScreen struct {
 	summary   string
 	organizer string
 	when      string
+
+	clockTimerID  screen.TimerID
+
+	// IP address display
+	lastIP        string
+	ipTimerID     screen.TimerID
+	ipHideTimerID screen.TimerID // Timer to auto-hide forced IP display
+	ipBarHeight   int
+	forceShowIP   bool // Force IP display even after startup window
+	forceHideIP   bool // Force IP to hide even during startup window
+	buildID       string
 }
- 
+
 func NewDarkroomIdleScreen() *DarkroomIdleScreen {
-	return &DarkroomIdleScreen{}
+	log.Println("DEBUG: NewDarkroomIdleScreen was called!")
+	return &DarkroomIdleScreen{
+		ipBarHeight: 44,
+	}
+}
+
+// SetBuildID sets the build identifier string.
+func (s *DarkroomIdleScreen) SetBuildID(id string) {
+	s.buildID = id
 }
  
 func (s *DarkroomIdleScreen) SetNextReservation(summary, organizer, when string) {
@@ -27,9 +47,26 @@ func (s *DarkroomIdleScreen) SetNextReservation(summary, organizer, when string)
  
 func (s *DarkroomIdleScreen) Init(mgr *screen.Manager) {
 	s.mgr = mgr
+	s.startClockTimer()
+}
+
+func (s *DarkroomIdleScreen) startClockTimer() {
+	// Calculate time until next minute
+	now := time.Now()
+	nextMinute := now.Truncate(time.Minute).Add(time.Minute)
+	duration := nextMinute.Sub(now)
+
+	s.clockTimerID = s.mgr.SetTimeout(duration, func(scr screen.Screen) {
+		if s.clockTimerID == 0 {
+			return
+		}
+		s.Update()
+		s.startClockTimer()
+	})
 }
  
 func (s *DarkroomIdleScreen) Update() {
+	log.Println("DEBUG: DarkroomIdleScreen.Update() is drawing to the screen!")
 	s.mgr.FillBackground(0, 0.5, 0) // Green background
  
 	s.mgr.SetFontSize(64)
@@ -78,6 +115,7 @@ func (s *DarkroomIdleScreen) HandleEvent(event screen.Event) bool {
 }
  
 func (s *DarkroomIdleScreen) Exit() {
+	s.clockTimerID = 0
 }
  
 func (s *DarkroomIdleScreen) Name() string {

@@ -4,6 +4,7 @@ package screens
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"strings"
 	"time"
@@ -39,6 +40,7 @@ type IdleScreen struct {
 
 // NewIdleScreen creates a new idle screen.
 func NewIdleScreen() *IdleScreen {
+	log.Println("DEBUG: Generic lib/video/screen/screens/idle.go NewIdleScreen was called!")
 	return &IdleScreen{
 		ipBarHeight: 44,
 	}
@@ -189,6 +191,7 @@ func (s *IdleScreen) drawIPBar() {
 }
 
 func (s *IdleScreen) Update() {
+	log.Println("DEBUG: Generic lib/video/screen/screens/idle.go Update() is drawing to the screen!")
 	s.mgr.FillBackground(0, 0.5, 0) // Green background
 
 	// Title

@@ -32,8 +32,8 @@ func NewServo(pinNum int, openPos, closePos int) (*Servo, error) {
 		isOpen:   false,
 	}
 
-	// Start in closed position
-	s.moveTo(closePos)
+	// Start in closed position (in a goroutine to prevent periph.io PWM hangs from freezing startup)
+	go s.moveTo(closePos)
 	return s, nil
 }
 
@@ -67,7 +67,7 @@ func posToDuty(pos int) gpio.Duty {
 func (s *Servo) moveTo(pos int) {
 	duty := posToDuty(pos)
 	// 50Hz for standard servo control
-	s.pin.PWM(duty, 50*physic.Hertz)
+	_ = s.pin.PWM(duty, 50*physic.Hertz)
 }
 
 func (s *Servo) moveFromTo(from, to int) {

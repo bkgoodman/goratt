@@ -117,9 +117,11 @@ func NewBaseApp(cfg *config.Config, audioParams *audio.Params, handler Handler, 
 		mgr.Register(screen.ScreenShutdown, app.ShutdownScreen)
 
 		mgr.SwitchTo(screen.ScreenIdle)
-		mgr.SetStopAudioFn(app.Audio.Stop)
-		mgr.SetPlayAudioFn(app.Audio.PlayPCM)
-		mgr.SetPlayAudioBytesFn(app.Audio.PlayBuffer)
+		if app.Audio != nil {
+			mgr.SetStopAudioFn(app.Audio.Stop)
+			mgr.SetPlayAudioFn(app.Audio.PlayPCM)
+			mgr.SetPlayAudioBytesFn(app.Audio.PlayBuffer)
+		}
 	}
 
 	// Initialize rotary encoder
@@ -130,19 +132,19 @@ func NewBaseApp(cfg *config.Config, audioParams *audio.Params, handler Handler, 
 		OnButtonUp:  app.SendButtonUpEvent,
 	})
 	if err != nil {
-		log.Fatalf("Init rotary: %v", err)
+		log.Printf("Init rotary error (continuing without rotary): %v", err)
 	}
 
 	// Initialize door opener
 	app.Door, err = door.New(cfg.Door)
 	if err != nil {
-		log.Fatalf("Init door: %v", err)
+		log.Printf("Init door error (continuing without door): %v", err)
 	}
 
 	// Initialize tag reader
 	app.Reader, err = reader.New(cfg.Reader)
 	if err != nil {
-		log.Fatalf("Init reader: %v", err)
+		log.Printf("Init reader error (continuing without reader): %v", err)
 	}
 
 	// Initialize ACL manager
@@ -164,7 +166,7 @@ func NewBaseApp(cfg *config.Config, audioParams *audio.Params, handler Handler, 
 	// Initialize event pipe
 	app.EventPipe, err = eventpipe.New(cfg.EventPipe, app.handleExternalEvent)
 	if err != nil {
-		log.Fatalf("Init event pipe: %v", err)
+		log.Printf("Init event pipe error (continuing without event pipe): %v", err)
 	}
 
 	return app

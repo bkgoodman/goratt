@@ -44,6 +44,9 @@ func NewAudioManager(params Params, device string) *AudioManager {
 
 // Stop stops any current playback.
 func (am *AudioManager) Stop() {
+	if am == nil {
+		return
+	}
 	am.mu.Lock()
 	defer am.mu.Unlock()
 	if am.cmd != nil && am.cmd.Process != nil {

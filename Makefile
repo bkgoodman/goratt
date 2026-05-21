@@ -59,9 +59,17 @@ darkroom_arm64_screen:
 	GOARCH=arm64 go build -tags=screen $(LDFLAGS) -o darkroom_arm64_screen ./cmd/darkroom
  
 # Build and deploy to neopi
-run: vending_arm64_screen
+run-vending: vending_arm64_screen
 	ssh bkg@neopi ./beforecopy.sh
 	scp vending_arm64_screen bkg@neopi:vending
+
+run-darkroom: darkroom_arm64_screen
+	ssh bkg@neopi ./beforecopy.sh
+	scp darkroom_arm64_screen bkg@neopi:darkroom
+
+run-doorlock: doorlock_arm64_screen
+	ssh bkg@neopi ./beforecopy.sh
+	scp doorlock_arm64_screen bkg@neopi:doorlock
  
 clean:
 	rm -f vending_* doorlock_* darkroom_*

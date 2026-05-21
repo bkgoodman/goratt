@@ -4,6 +4,7 @@ package vendingscreens
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"strings"
 	"time"
@@ -39,6 +40,7 @@ type VendingIdleScreen struct {
 
 // NewIdleScreen creates a new idle screen.
 func NewVendingIdleScreen() *VendingIdleScreen {
+	log.Println("DEBUG: NewVendingIdleScreen was called!")
 	return &VendingIdleScreen{
 		ipBarHeight: 44,
 	}
@@ -189,6 +191,7 @@ func (s *VendingIdleScreen) drawIPBar() {
 }
 
 func (s *VendingIdleScreen) Update() {
+	log.Println("DEBUG: VendingIdleScreen.Update() is drawing to the screen!")
 	s.mgr.FillBackground(0, 0.5, 0) // Green background
 
 	// Title

@@ -85,6 +85,7 @@ func main() {
  
 		// Local custom screens
 		darkroomApp.idleScreen = darkroomscreens.NewDarkroomIdleScreen()
+		darkroomApp.idleScreen.SetBuildID(myBuild)
 		darkroomApp.grantedScreen = darkroomscreens.NewDarkroomGrantedScreen()
 		darkroomApp.deniedScreen = darkroomscreens.NewDarkroomDeniedScreen()
 		darkroomApp.openingScreen = darkroomscreens.NewDarkroomOpeningScreen()
@@ -97,6 +98,10 @@ func main() {
 		mgr.Register(screen.ScreenOpening, darkroomApp.openingScreen)
 		mgr.Register(screen.ScreenRoomInUse, darkroomApp.roomInUseScreen)
 		mgr.Register(screen.ScreenSafeLight, darkroomApp.safeLightScreen)
+
+		// Switch to our custom idle screen to override the generic "Pay-by-RATT" screen 
+		// that was initialized by app.NewBaseApp()
+		mgr.SwitchTo(screen.ScreenIdle)
 	}
  
 	// Start calendar fetch loop
@@ -148,6 +153,10 @@ func (app *DarkroomApp) fetchCalendar() {
 		if app.idleScreen != nil {
 			app.idleScreen.SetNextReservation("", "", "")
 		}
+	}
+
+	if app.Base.Display != nil {
+		app.Base.Display.Manager().Update()
 	}
 }
  

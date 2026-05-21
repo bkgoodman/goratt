@@ -46,8 +46,9 @@ func (g *GPIO) Open() error {
 func (g *GPIO) Close() error {
 	if g.openHigh {
 		return g.pin.Out(gpio.Low)
+	} else {
+		return g.pin.Out(gpio.High)
 	}
-	return g.pin.Out(gpio.High)
 }
 
 // Release implements DoorOpener.Release.

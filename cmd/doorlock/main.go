@@ -71,6 +71,9 @@ func main() {
 		mgr.Register(screen.ScreenGranted, doorlockApp.grantedScreen)
 		mgr.Register(screen.ScreenDenied, doorlockApp.deniedScreen)
 		mgr.Register(screen.ScreenOpening, doorlockApp.openingScreen)
+
+		// Switch to our custom idle screen to override the generic default screen
+		mgr.SwitchTo(screen.ScreenIdle)
 	}
 
 	if *openflag {

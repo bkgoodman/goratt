@@ -1,6 +1,8 @@
 package door
 
-import "fmt"
+import (
+	"fmt"
+)
 
 // DoorOpener is the interface for all door control implementations.
 type DoorOpener interface {

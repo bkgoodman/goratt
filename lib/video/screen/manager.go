@@ -144,6 +144,11 @@ func (m *Manager) SwitchTo(id ScreenID) {
 		return
 	}
 
+	if m.current == screen {
+		m.mu.Unlock()
+		return
+	}
+
 	// Stop any ongoing audio playback
 	if m.stopAudioFn != nil {
 		m.stopAudioFn()
@@ -177,7 +182,16 @@ func (m *Manager) SwitchTo(id ScreenID) {
 		go func() {
 			m.drawMu.Lock()
 			defer m.drawMu.Unlock()
-			screen.Update()
+
+			// Check again inside the goroutine to prevent a race condition where a newer 
+			// SwitchTo call changes m.current before this goroutine gets scheduled.
+			m.mu.Lock()
+			isCurrent := (m.current == screen)
+			m.mu.Unlock()
+
+			if isCurrent {
+				screen.Update()
+			}
 		}()
 	}
 }
