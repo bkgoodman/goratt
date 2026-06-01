@@ -2,7 +2,10 @@
 
 package rotary
 
-import "errors"
+import (
+	"errors"
+	"time"
+)
 
 var ErrNotSupported = errors.New("rotary encoder not supported on this platform")
 
@@ -20,7 +23,7 @@ type Config struct {
 // Handlers holds callback functions for rotary events.
 type Handlers struct {
 	OnTurn      func(delta int)
-	OnPress     func()
+	OnPress     func(pressedAt time.Time)
 	OnLongPress func()
 	OnButtonUp  func()
 }

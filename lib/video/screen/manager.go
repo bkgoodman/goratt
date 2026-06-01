@@ -217,7 +217,15 @@ func (m *Manager) SendEvent(event Event) bool {
 		}
 	} else if event.Type == EventRotaryPress {
 		if rotary := event.Rotary(); rotary != nil && m.turnPressThreshold > 0 {
-			if time.Since(m.lastTurnTime) <= m.turnPressThreshold {
+			pressTime := rotary.PressedAt
+			if pressTime.IsZero() {
+				pressTime = time.Now()
+			}
+			diff := pressTime.Sub(m.lastTurnTime)
+			if diff < 0 {
+				diff = -diff
+			}
+			if diff <= m.turnPressThreshold {
 				// User probably jiggled the knob while trying to press the button.
 				// Inject a synthetic reverse-turn to undo the accident.
 				log.Printf("Screen: Canceling accidental rotary turn (delta: %d) because press arrived within %v", m.lastTurnDelta, m.turnPressThreshold)

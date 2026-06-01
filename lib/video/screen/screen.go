@@ -2,6 +2,8 @@
 
 package screen
 
+import "time"
+
 // Event types that screens can receive
 type EventType int
 
@@ -60,8 +62,9 @@ type RFIDData struct {
 
 // RotaryData contains data for rotary encoder events.
 type RotaryData struct {
-	ID    RotaryID // Which rotary encoder
-	Delta int      // +1 for CW, -1 for CCW (for turn events)
+	ID        RotaryID  // Which rotary encoder
+	Delta     int       // +1 for CW, -1 for CCW (for turn events)
+	PressedAt time.Time // Time when the button was physically pressed (for press events)
 }
 
 // PinData contains data for GPIO pin events.

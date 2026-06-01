@@ -21,7 +21,7 @@ type Rotary struct {
 	lastDT         int
 	pos            int64
 	onTurn         func(delta int)
-	onPress        func()
+	onPress        func(pressedAt time.Time)
 	onLongPress    func()
 	onButtonUp     func()
 	btnPressTime   time.Time
@@ -41,7 +41,7 @@ type Config struct {
 // Handlers holds callback functions for rotary events.
 type Handlers struct {
 	OnTurn      func(delta int) // Called with +1 (CW) or -1 (CCW)
-	OnPress     func()          // Called when button pressed (short press)
+	OnPress     func(pressedAt time.Time)          // Called when button pressed (short press)
 	OnLongPress func()          // Called when button held >1s
 	OnButtonUp  func()          // Called when button released (after long press)
 }
@@ -190,7 +190,7 @@ func (r *Rotary) pollButton() {
 				if !r.btnPressTime.IsZero() && !r.longPressFired {
 					// Short press
 					if r.onPress != nil {
-						r.onPress()
+						r.onPress(r.btnPressTime)
 					}
 				} else if r.longPressFired {
 					// Released after long press

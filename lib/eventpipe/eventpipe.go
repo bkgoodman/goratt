@@ -168,7 +168,7 @@ func parseLine(line string) (screen.Event, error) {
 		if strings.ToLower(parts[1]) == "press" {
 			return screen.Event{
 				Type: screen.EventRotaryPress,
-				Data: screen.RotaryData{ID: screen.RotaryMain},
+				Data: screen.RotaryData{ID: screen.RotaryMain, PressedAt: time.Now()},
 			}, nil
 		}
 		delta, err := strconv.Atoi(parts[1])

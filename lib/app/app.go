@@ -359,11 +359,11 @@ func (app *BaseApp) SendRotaryEvent(delta int) {
 	}
 }
 
-func (app *BaseApp) SendRotaryPressEvent() {
+func (app *BaseApp) SendRotaryPressEvent(pressedAt time.Time) {
 	if app.Display != nil {
 		app.Display.SendEvent(screen.Event{
 			Type: screen.EventRotaryPress,
-			Data: screen.RotaryData{ID: screen.RotaryMain},
+			Data: screen.RotaryData{ID: screen.RotaryMain, PressedAt: pressedAt},
 		})
 	}
 }
