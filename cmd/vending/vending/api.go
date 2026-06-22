@@ -138,6 +138,33 @@ func (c *Client) QueryBalance(member string) (*BalanceResponse, error) {
 	return balanceResp, nil
 }
 
+// ReportBadTag reports an unknown tag number to the API in the background.
+func (c *Client) ReportBadTag(tagID uint64) {
+	url := fmt.Sprintf("%s/api/v1/badtag/%010d", c.BaseURL, tagID)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		log.Printf("Failed to create ReportBadTag request: %v", err)
+		return
+	}
+	c.applyAuth(req)
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		log.Printf("ReportBadTag HTTP request failed: %v", err)
+		return
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("Warning: failed to close ReportBadTag response body: %v", err)
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("ReportBadTag returned status: %v", resp.StatusCode)
+	}
+}
+
 // ChargeAccount charges a member's account for a purchase
 func (c *Client) ChargeAccount(member string, req ChargeRequest) (*ChargeResponse, error) {
 	if c.product != "" {

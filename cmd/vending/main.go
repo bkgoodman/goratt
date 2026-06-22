@@ -206,6 +206,9 @@ func (app *VendingApp) HandleTag(tagID uint64, record acl.ACLRecord, found bool)
 	if !authorized {
 		if !found {
 			log.Printf("Tag %d not found in ACL", tagID)
+			if app.vendingClient != nil {
+				go app.vendingClient.ReportBadTag(tagID)
+			}
 		} else {
 			log.Printf("Tag %d: member=%s denied", tagID, record.Member)
 		}
