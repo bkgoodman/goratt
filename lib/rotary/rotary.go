@@ -188,9 +188,11 @@ func (r *Rotary) pollButton() {
 				}
 
 				if !r.btnPressTime.IsZero() && !r.longPressFired {
-					// Short press
-					if r.onPress != nil {
-						r.onPress(r.btnPressTime)
+					// Short press - require at least 50ms duration to filter out mechanical bounce
+					if time.Since(r.btnPressTime) > 50*time.Millisecond {
+						if r.onPress != nil {
+							r.onPress(r.btnPressTime)
+						}
 					}
 				} else if r.longPressFired {
 					// Released after long press
