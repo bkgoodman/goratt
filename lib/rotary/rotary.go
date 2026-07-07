@@ -5,6 +5,7 @@ package rotary
 import (
 	"fmt"
 	"log"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -24,10 +25,15 @@ type Rotary struct {
 	onPress        func(pressedAt time.Time)
 	onLongPress    func()
 	onButtonUp     func()
+	stopCh            chan struct{}
+	lastTurnEventTime time.Time
+
+	// Button state - protected by btnMu.
+	// Accessed by both pollButton goroutine and longPressTimer goroutine.
+	btnMu          sync.Mutex
 	btnPressTime   time.Time
 	longPressTimer *time.Timer
 	longPressFired bool
-	stopCh         chan struct{}
 }
 
 // Config holds configuration for a rotary encoder.
@@ -136,6 +142,11 @@ func (r *Rotary) pollRotary() {
 
 			// Decode direction on CLK rising edge
 			if clkLevel == gpio.High {
+				if time.Since(r.lastTurnEventTime) < 5*time.Millisecond {
+					continue
+				}
+				r.lastTurnEventTime = time.Now()
+
 				if dtLevel == gpio.Low {
 					atomic.AddInt64(&r.pos, 1)
 					if r.onTurn != nil {
@@ -152,8 +163,23 @@ func (r *Rotary) pollRotary() {
 	}
 }
 
-// pollButton waits for edges on the button pin and handles press/release.
+// pollButton uses level-change detection with debounce to reliably detect
+// button presses and releases.
+//
+// Why not just use WaitForEdge + Read?
+// WaitForEdge returns when a kernel-queued edge event is consumed, but Read()
+// returns the CURRENT pin level, not the level at the time of the edge. With
+// BothEdges + mechanical bounce, multiple edges queue up and Read() can return
+// the same level for different edges, making transitions invisible. By tracking
+// the last known stable level and requiring a confirmed level change after a
+// debounce delay, we are immune to edge-level desynchronization and bounce.
 func (r *Rotary) pollButton() {
+	// Read the initial stable level before entering the loop
+	lastStableLevel := r.btnPin.Read()
+	log.Printf("Button poll started, initial level: %v", lastStableLevel)
+
+	const debounceDelay = 15 * time.Millisecond
+
 	for {
 		select {
 		case <-r.stopCh:
@@ -161,48 +187,82 @@ func (r *Rotary) pollButton() {
 		default:
 		}
 
-		if r.btnPin.WaitForEdge(100 * time.Millisecond) {
-			level := r.btnPin.Read()
+		// Wait for an edge event or timeout. The edge wakes us up quickly
+		// when the pin changes; the timeout ensures we don't miss anything
+		// if an edge event is lost by the kernel.
+		r.btnPin.WaitForEdge(100 * time.Millisecond)
 
-			if level == gpio.Low {
-				// Button pressed (active low with pull-up)
-				r.btnPressTime = time.Now()
-				r.longPressFired = false
+		// Read the current pin level
+		level := r.btnPin.Read()
 
-				if r.longPressTimer != nil {
-					r.longPressTimer.Stop()
-				}
-				r.longPressTimer = time.AfterFunc(1*time.Second, func() {
-					if !r.btnPressTime.IsZero() && !r.longPressFired {
-						r.longPressFired = true
-						if r.onLongPress != nil {
-							fmt.Println("Button long press")
-							r.onLongPress()
-						}
-					}
-				})
-			} else {
-				// Button released
-				if r.longPressTimer != nil {
-					r.longPressTimer.Stop()
-				}
+		// Only process when we see a level that differs from last stable state.
+		// This filters out stale/duplicate edge events that don't represent
+		// an actual state change.
+		if level == lastStableLevel {
+			continue
+		}
 
+		// We see a different level. Wait for bounce to settle.
+		time.Sleep(debounceDelay)
+
+		// Re-read to confirm the level is stable after debounce
+		confirmedLevel := r.btnPin.Read()
+
+		// If it bounced back to the previous stable level, ignore it
+		if confirmedLevel == lastStableLevel {
+			continue
+		}
+
+		// Confirmed level change
+		lastStableLevel = confirmedLevel
+
+		if confirmedLevel == gpio.Low {
+			// Button pressed (active low with pull-up)
+			r.btnMu.Lock()
+			r.btnPressTime = time.Now()
+			r.longPressFired = false
+
+			if r.longPressTimer != nil {
+				r.longPressTimer.Stop()
+			}
+			r.longPressTimer = time.AfterFunc(1*time.Second, func() {
+				r.btnMu.Lock()
+				defer r.btnMu.Unlock()
 				if !r.btnPressTime.IsZero() && !r.longPressFired {
-					// Short press - require at least 50ms duration to filter out mechanical bounce
-					if time.Since(r.btnPressTime) > 50*time.Millisecond {
-						if r.onPress != nil {
-							r.onPress(r.btnPressTime)
-						}
-					}
-				} else if r.longPressFired {
-					// Released after long press
-					if r.onButtonUp != nil {
-						r.onButtonUp()
+					r.longPressFired = true
+					if r.onLongPress != nil {
+						fmt.Println("Button long press")
+						r.onLongPress()
 					}
 				}
+			})
+			r.btnMu.Unlock()
+		} else {
+			// Button released
+			r.btnMu.Lock()
+			if r.longPressTimer != nil {
+				r.longPressTimer.Stop()
+			}
 
-				r.btnPressTime = time.Time{}
-				r.longPressFired = false
+			pressTime := r.btnPressTime
+			longPressFired := r.longPressFired
+
+			r.btnPressTime = time.Time{}
+			r.longPressFired = false
+			r.btnMu.Unlock()
+
+			if !pressTime.IsZero() && !longPressFired {
+				// Short press - confirmed by debounce, no duration filter needed
+				if r.onPress != nil {
+					fmt.Println("Button short press")
+					r.onPress(pressTime)
+				}
+			} else if longPressFired {
+				// Released after long press
+				fmt.Println("Button long press released")
+				if r.onButtonUp != nil {
+					r.onButtonUp()
+				}
 			}
 		}
 	}
@@ -215,9 +275,12 @@ func (r *Rotary) Position() int64 {
 
 // Release releases GPIO resources.
 func (r *Rotary) Release() error {
+	r.btnMu.Lock()
 	if r.longPressTimer != nil {
 		r.longPressTimer.Stop()
 	}
+	r.btnMu.Unlock()
+
 	close(r.stopCh)
 	if r.dtPin != nil {
 		if err := r.dtPin.Halt(); err != nil {

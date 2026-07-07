@@ -201,6 +201,13 @@ func (app *VendingApp) HandleTag(tagID uint64, record acl.ACLRecord, found bool)
 		if app.Base.Display.SendEvent(evt) {
 			return
 		}
+
+		// Ignore tag if we are not in the idle screen
+		current := app.Base.Display.Manager().Current()
+		if current != nil && current.Name() != "VendingIdle" {
+			log.Printf("Tag read ignored (not in idle screen)")
+			return
+		}
 	}
 
 	if !authorized {
