@@ -15,6 +15,7 @@ type ProcessingScreen struct {
 	mgr            *screen.Manager
 	timeoutID      screen.TimerID
 	spinnerTimerID screen.TimerID
+	spinnerStopped bool // Set under drawMu to signal late-firing timer callbacks
 	spinnerFrame   int
 	spinnerX       int
 	spinnerY       int
@@ -28,6 +29,7 @@ func NewProcessingScreen() *ProcessingScreen {
 func (s *ProcessingScreen) Init(mgr *screen.Manager) {
 	s.mgr = mgr
 	s.spinnerFrame = 0
+	s.spinnerStopped = false
 
 	// Position spinner below text
 	s.spinnerX = (mgr.Width() - screens.SpinnerSize()) / 2
@@ -44,15 +46,21 @@ func (s *ProcessingScreen) Init(mgr *screen.Manager) {
 		// Wait for minimum processing time to ensure spinner is visible
 		time.Sleep(3 * time.Second)
 
-		// Stop spinner animation before switching screens
+		// Stop spinner animation before switching screens.
+		// ClearTimeout prevents future firings, but a callback may already
+		// be in-flight (past the timers map check, waiting on drawMu).
 		if s.spinnerTimerID != 0 {
 			mgr.ClearTimeout(s.spinnerTimerID)
 			s.spinnerTimerID = 0
 		}
 
-		// Clear spinner area completely to prevent any artifacts
-		s.mgr.FillRect(s.spinnerX, s.spinnerY, screens.SpinnerSize(), screens.SpinnerSize(), 0, 0.4, 0.6)
-		s.mgr.FlushRect(s.spinnerX, s.spinnerY, screens.SpinnerSize(), screens.SpinnerSize())
+		// Clear spinner area under drawMu so we don't race with a
+		// late-firing timer callback that is also drawing to the gg.Context.
+		mgr.WithDrawLock(func() {
+			s.spinnerStopped = true
+			s.mgr.FillRect(s.spinnerX, s.spinnerY, screens.SpinnerSize(), screens.SpinnerSize(), 0, 0.4, 0.6)
+			s.mgr.FlushRect(s.spinnerX, s.spinnerY, screens.SpinnerSize(), screens.SpinnerSize())
+		})
 
 		// Small delay to ensure framebuffer is updated before screen switch
 		time.Sleep(50 * time.Millisecond)
@@ -73,7 +81,10 @@ func (s *ProcessingScreen) Init(mgr *screen.Manager) {
 
 func (s *ProcessingScreen) startSpinnerAnimation() {
 	s.spinnerTimerID = s.mgr.SetTimeout(100*time.Millisecond, func(scr screen.Screen) {
-		if s.spinnerTimerID == 0 {
+		// drawMu is held here by SetTimeout's AfterFunc wrapper.
+		// Check both the timer ID (cleared by payment goroutine) and
+		// spinnerStopped (set under drawMu to catch in-flight callbacks).
+		if s.spinnerTimerID == 0 || s.spinnerStopped {
 			return
 		}
 		s.spinnerFrame = (s.spinnerFrame + 1) % len(screens.SpinnerFrames())
@@ -128,6 +139,7 @@ func (s *ProcessingScreen) Exit() {
 	// Clear timers
 	s.timeoutID = 0
 	s.spinnerTimerID = 0
+	s.spinnerStopped = true
 
 	// Clear spinner area to prevent artifacts
 	s.mgr.FillRect(s.spinnerX, s.spinnerY, screens.SpinnerSize(), screens.SpinnerSize(), 0, 0.4, 0.6)

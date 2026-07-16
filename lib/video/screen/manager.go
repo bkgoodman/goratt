@@ -302,6 +302,16 @@ func (m *Manager) FlushRect(x, y, w, h int) {
 	}
 }
 
+// WithDrawLock executes fn while holding the draw mutex.
+// Use this when drawing from a goroutine that is not already protected
+// by drawMu (e.g. a background payment goroutine that needs to clear
+// the spinner area before switching screens).
+func (m *Manager) WithDrawLock(fn func()) {
+	m.drawMu.Lock()
+	defer m.drawMu.Unlock()
+	fn()
+}
+
 // FillRect fills a rectangle with a solid color.
 func (m *Manager) FillRect(x, y, w, h int, r, g, b float64) {
 	m.dc.SetRGB(r, g, b)
