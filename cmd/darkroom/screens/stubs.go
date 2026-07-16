@@ -12,6 +12,7 @@ func (s *DarkroomIdleScreen) HandleEvent(event screen.Event) bool { return false
 func (s *DarkroomIdleScreen) Exit() {}
 func (s *DarkroomIdleScreen) Name() string { return "Idle" }
 func (s *DarkroomIdleScreen) SetNextReservation(summary, organizer, when string) {}
+func (s *DarkroomIdleScreen) SetBuildID(id string) {}
  
 type DarkroomGrantedScreen struct{}
 func NewDarkroomGrantedScreen() *DarkroomGrantedScreen { return &DarkroomGrantedScreen{} }
