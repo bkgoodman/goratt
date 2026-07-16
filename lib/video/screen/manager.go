@@ -346,19 +346,17 @@ func (m *Manager) FillBackground(r, g, b float64) {
 func (m *Manager) SetMQTTConnected(connected bool) {
 	m.mu.Lock()
 	m.mqttConnected = connected
-	current := m.current
 	m.mu.Unlock()
 
-	// Send event to current screen so it can react in real-time
-	if current != nil {
-		var eventType EventType
-		if connected {
-			eventType = EventMQTTConnected
-		} else {
-			eventType = EventMQTTDisconnected
-		}
-		current.HandleEvent(Event{Type: eventType})
+	// Route through SendEvent so that drawMu is held when the screen
+	// handles the event (the handler may draw the MQTT indicator bar).
+	var eventType EventType
+	if connected {
+		eventType = EventMQTTConnected
+	} else {
+		eventType = EventMQTTDisconnected
 	}
+	m.SendEvent(Event{Type: eventType})
 }
 
 // IsMQTTConnected returns the current MQTT connection state.

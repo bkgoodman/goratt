@@ -33,10 +33,6 @@ func (s *SuccessScreen) Init(mgr *screen.Manager) {
 	// Clear session after successful payment
 	mgr.ClearVendingSession()
 
-	// Force a full framebuffer clear to prevent any artifacts from previous screen
-	mgr.FillBackground(0, 0.6, 0)
-	mgr.Flush()
-
 	// Auto-dismiss after 10 seconds
 	s.timeoutID = mgr.SetTimeout(10*time.Second, func(scr screen.Screen) {
 		mgr.SwitchTo(screen.ScreenIdle)
