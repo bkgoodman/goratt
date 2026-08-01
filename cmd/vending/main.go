@@ -35,6 +35,7 @@ type VendingApp struct {
 	processingScreen        *vendingscreens.ProcessingScreen
 	successScreen           *vendingscreens.SuccessScreen
 	paymentFailedScreen     *vendingscreens.PaymentFailedScreen
+	apiErrorScreen          *vendingscreens.ApiErrorScreen
 }
 
 type OpenRequest struct {
@@ -88,6 +89,7 @@ func main() {
 		vendingApp.processingScreen = vendingscreens.NewProcessingScreen()
 		vendingApp.successScreen = vendingscreens.NewSuccessScreen()
 		vendingApp.paymentFailedScreen = vendingscreens.NewPaymentFailedScreen()
+		vendingApp.apiErrorScreen = vendingscreens.NewApiErrorScreen()
 
 		mgr.Register(screen.ScreenIdle, idle)
 		mgr.Register(screen.ScreenDenied, vendingApp.deniedScreen)
@@ -98,6 +100,7 @@ func main() {
 		mgr.Register(screen.ScreenProcessing, vendingApp.processingScreen)
 		mgr.Register(screen.ScreenSuccess, vendingApp.successScreen)
 		mgr.Register(screen.ScreenPaymentFailed, vendingApp.paymentFailedScreen)
+		mgr.Register(screen.ScreenConnectionLost, vendingApp.apiErrorScreen)
 
 		// Ensure our custom idle screen replaces the default one
 		mgr.SwitchTo(screen.ScreenIdle)
@@ -255,6 +258,8 @@ func (app *VendingApp) HandleTag(tagID uint64, record acl.ACLRecord, found bool)
 				log.Printf("Queried balance for %s: $%.2f (lastLog: %d)", record.Member, balance, lastLog)
 			} else {
 				log.Printf("Failed to query balance for %s: %v", record.Member, err)
+				app.Base.Display.Manager().SwitchTo(screen.ScreenConnectionLost)
+				return
 			}
 		}
 
