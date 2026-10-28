@@ -70,7 +70,7 @@ func main() {
 	labelApp.HTTPServer = StartHTTPServer(cfg.LabelPrinter.HTTPPort, printer)
 	defer labelApp.HTTPServer.Shutdown()
 
-	if cfg.LabelPrinter.PrintOnBoot {
+	if cfg.LabelPrinter.PrintOnBoot != nil && *cfg.LabelPrinter.PrintOnBoot {
 		log.Println("PrintOnBoot is enabled; printing ready label")
 		go func() {
 			if err := printer.PrintStoragePass("- Ready -"); err != nil {

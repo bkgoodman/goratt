@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 	"sync"
 	"time"
 
@@ -39,6 +40,21 @@ type ControlPad struct {
 	wg     sync.WaitGroup
 }
 
+// unexportGPIO releases a GPIO pin from Linux sysfs (/sys/class/gpio/unexport)
+// if it was previously exported (e.g., by older software or startup scripts),
+// allowing periph.io character device driver (/dev/gpiochip*) to claim it without EBUSY.
+func unexportGPIO(pinNum int) {
+	if pinNum <= 0 {
+		return
+	}
+	f, err := os.OpenFile("/sys/class/gpio/unexport", os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = fmt.Fprintf(f, "%d\n", pinNum)
+}
+
 // NewControlPad creates and initializes the button and LED controller.
 func NewControlPad(cfg LabelPrinterConfig, printer *Printer, publishFn func(string, string)) *ControlPad {
 	cp := &ControlPad{
@@ -49,27 +65,47 @@ func NewControlPad(cfg LabelPrinterConfig, printer *Printer, publishFn func(stri
 		stopCh:  make(chan struct{}),
 	}
 
+	// Release pins from sysfs if previously exported, avoiding device-busy errors
+	unexportGPIO(cfg.Button1Pin)
+	unexportGPIO(cfg.Button2Pin)
+	unexportGPIO(cfg.LED1Pin)
+	unexportGPIO(cfg.LED2Pin)
+
 	// Lookup and configure GPIO pins via periph.io
 	cp.btn1Pin = lookupPin(cfg.Button1Pin)
 	cp.btn2Pin = lookupPin(cfg.Button2Pin)
 	cp.led1Pin = lookupPin(cfg.LED1Pin)
 	cp.led2Pin = lookupPin(cfg.LED2Pin)
 
-	if cp.btn1Pin != nil && cp.btn2Pin != nil {
+	if cp.btn1Pin != nil {
 		if err := cp.btn1Pin.In(gpio.PullUp, gpio.BothEdges); err != nil {
 			log.Printf("Warning: configure Button1 pin %d: %v", cfg.Button1Pin, err)
+			cp.btn1Pin = nil
 		}
+	}
+	if cp.btn2Pin != nil {
 		if err := cp.btn2Pin.In(gpio.PullUp, gpio.BothEdges); err != nil {
 			log.Printf("Warning: configure Button2 pin %d: %v", cfg.Button2Pin, err)
+			cp.btn2Pin = nil
 		}
-	} else {
+	}
+	if cp.btn1Pin == nil && cp.btn2Pin == nil {
 		log.Printf("GPIO button pins not available; hardware button inputs disabled")
 	}
 
-	if cp.led1Pin != nil && cp.led2Pin != nil {
-		cp.led1Pin.Out(gpio.Low)
-		cp.led2Pin.Out(gpio.Low)
-	} else {
+	if cp.led1Pin != nil {
+		if err := cp.led1Pin.Out(gpio.Low); err != nil {
+			log.Printf("Warning: configure LED1 pin %d: %v", cfg.LED1Pin, err)
+			cp.led1Pin = nil
+		}
+	}
+	if cp.led2Pin != nil {
+		if err := cp.led2Pin.Out(gpio.Low); err != nil {
+			log.Printf("Warning: configure LED2 pin %d: %v", cfg.LED2Pin, err)
+			cp.led2Pin = nil
+		}
+	}
+	if cp.led1Pin == nil && cp.led2Pin == nil {
 		log.Printf("GPIO LED pins not available; hardware LED outputs disabled")
 	}
 
@@ -260,7 +296,10 @@ func (cp *ControlPad) pollButton(pin gpio.PinIO, onPress func()) {
 		default:
 		}
 
-		pin.WaitForEdge(100 * time.Millisecond)
+		if !pin.WaitForEdge(100 * time.Millisecond) {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
 		level := pin.Read()
 		if level == lastStableLevel {
 			continue

@@ -9,6 +9,21 @@ type AppConfig struct {
 	LabelPrinter LabelPrinterConfig `yaml:"labelprinter"`
 }
 
+func (c *AppConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	if err := unmarshal(&c.Config); err != nil {
+		return err
+	}
+	type rawAppConfig struct {
+		LabelPrinter LabelPrinterConfig `yaml:"labelprinter"`
+	}
+	var raw rawAppConfig
+	if err := unmarshal(&raw); err != nil {
+		return err
+	}
+	c.LabelPrinter = raw.LabelPrinter
+	return nil
+}
+
 // LabelPrinterConfig contains hardware and network configuration for the label printer.
 type LabelPrinterConfig struct {
 	Device      string `yaml:"device"`        // Path to USB printer device (default: "/dev/usb/lp0")
@@ -17,7 +32,7 @@ type LabelPrinterConfig struct {
 	Button2Pin  int    `yaml:"button2_pin"`   // GPIO pin for Button 2 / Storage Pass (default: 25)
 	LED1Pin     int    `yaml:"led1_pin"`      // GPIO pin for LED 1 (default: 23)
 	LED2Pin     int    `yaml:"led2_pin"`      // GPIO pin for LED 2 (default: 24)
-	PrintOnBoot bool   `yaml:"print_on_boot"` // Whether to print a ready label on boot (default: false)
+	PrintOnBoot *bool  `yaml:"print_on_boot"` // Whether to print a ready label on boot (default: true)
 	Personality string `yaml:"personality"`   // Personality name for MQTT reporting (default: "storagepass")
 }
 
@@ -40,6 +55,10 @@ func (c *LabelPrinterConfig) SetDefaults() {
 	}
 	if c.LED2Pin == 0 {
 		c.LED2Pin = 24
+	}
+	if c.PrintOnBoot == nil {
+		defaultPrint := true
+		c.PrintOnBoot = &defaultPrint
 	}
 	if c.Personality == "" {
 		c.Personality = "storagepass"

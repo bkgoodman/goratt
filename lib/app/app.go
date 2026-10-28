@@ -179,7 +179,9 @@ func (app *BaseApp) Run() {
 			log.Printf("MQTT connect: %v", err)
 		}
 	}()
-	go app.tagListener()
+	if app.Reader != nil {
+		go app.tagListener()
+	}
 	go app.pingSender()
 	if app.EventPipe != nil {
 		go app.EventPipe.Start()
@@ -195,11 +197,19 @@ func (app *BaseApp) Run() {
 
 func (app *BaseApp) Shutdown() {
 	app.Cancel()
-	app.MQTT.Disconnect()
-	app.Reader.Close()
-	app.Door.Release()
-	app.Indicator.Shutdown()
-	app.Indicator.Release()
+	if app.MQTT != nil {
+		app.MQTT.Disconnect()
+	}
+	if app.Reader != nil {
+		app.Reader.Close()
+	}
+	if app.Door != nil {
+		app.Door.Release()
+	}
+	if app.Indicator != nil {
+		app.Indicator.Shutdown()
+		app.Indicator.Release()
+	}
 	if app.Display != nil {
 		app.Display.Manager().SwitchTo(screen.ScreenShutdown)
 		app.Display.Release()
@@ -281,6 +291,9 @@ func (app *BaseApp) onMQTTMessage(topic string, payload []byte) {
 }
 
 func (app *BaseApp) tagListener() {
+	if app.Reader == nil {
+		return
+	}
 	for {
 		select {
 		case <-app.Ctx.Done():
