@@ -8,57 +8,67 @@ LDFLAGS := -ldflags="-X main.myBuild=$(BUILD_VERSION)"
 SCREEN_TARGETS := vending_x86_screen darkroom_x86_screen doorlock_x86_screen \
                   vending_arm_screen  darkroom_arm_screen  doorlock_arm_screen \
                   vending_arm64_screen darkroom_arm64_screen doorlock_arm64_screen
- 
-# No-screen targets (Doorlock only)
-NOSCREEN_TARGETS := doorlock_x86 doorlock_arm doorlock_arm64
- 
+
+# No-screen targets (Doorlock and Labelprinter)
+NOSCREEN_TARGETS := doorlock_x86 doorlock_arm doorlock_arm64 \
+                    labelprinter_x86 labelprinter_arm labelprinter_arm64
+
 all: $(NOSCREEN_TARGETS) $(SCREEN_TARGETS)
- 
+
 # Architecture Groups
-x86: doorlock_x86 doorlock_x86_screen vending_x86_screen darkroom_x86_screen
-arm: doorlock_arm doorlock_arm_screen vending_arm_screen darkroom_arm_screen
-arm64: doorlock_arm64 doorlock_arm64_screen vending_arm64_screen darkroom_arm64_screen
- 
+x86: doorlock_x86 doorlock_x86_screen vending_x86_screen darkroom_x86_screen labelprinter_x86
+arm: doorlock_arm doorlock_arm_screen vending_arm_screen darkroom_arm_screen labelprinter_arm
+arm64: doorlock_arm64 doorlock_arm64_screen vending_arm64_screen darkroom_arm64_screen labelprinter_arm64
+
 # --- x86 Builds ---
 doorlock_x86:
 	go build $(LDFLAGS) -o doorlock_x86 ./cmd/doorlock
- 
+
 doorlock_x86_screen:
 	go build -tags=screen $(LDFLAGS) -o doorlock_x86_screen ./cmd/doorlock
- 
+
 vending_x86_screen:
 	go build -tags=screen $(LDFLAGS) -o vending_x86_screen ./cmd/vending
- 
+
 darkroom_x86_screen:
 	go build -tags=screen $(LDFLAGS) -o darkroom_x86_screen ./cmd/darkroom
- 
+
+labelprinter_x86:
+	go build $(LDFLAGS) -o labelprinter_x86 ./cmd/labelprinter
+
 # --- ARM (32-bit) Builds ---
 doorlock_arm:
 	GOARCH=arm go build $(LDFLAGS) -o doorlock_arm ./cmd/doorlock
- 
+
 doorlock_arm_screen:
 	GOARCH=arm go build -tags=screen $(LDFLAGS) -o doorlock_arm_screen ./cmd/doorlock
- 
+
 vending_arm_screen:
 	GOARCH=arm go build -tags=screen $(LDFLAGS) -o vending_arm_screen ./cmd/vending
- 
+
 darkroom_arm_screen:
 	GOARCH=arm go build -tags=screen $(LDFLAGS) -o darkroom_arm_screen ./cmd/darkroom
- 
+
+labelprinter_arm:
+	GOARCH=arm go build $(LDFLAGS) -o labelprinter_arm ./cmd/labelprinter
+
 # --- ARM64 Builds ---
 doorlock_arm64:
 	GOARCH=arm64 go build $(LDFLAGS) -o doorlock_arm64 ./cmd/doorlock
- 
+
 doorlock_arm64_screen:
 	GOARCH=arm64 go build -tags=screen $(LDFLAGS) -o doorlock_arm64_screen ./cmd/doorlock
- 
+
 vending_arm64_screen:
 	GOARCH=arm64 go build -tags=screen $(LDFLAGS) -o vending_arm64_screen ./cmd/vending
- 
+
 darkroom_arm64_screen:
 	GOARCH=arm64 go build -tags=screen $(LDFLAGS) -o darkroom_arm64_screen ./cmd/darkroom
- 
-# Build and deploy to neopi
+
+labelprinter_arm64:
+	GOARCH=arm64 go build $(LDFLAGS) -o labelprinter_arm64 ./cmd/labelprinter
+
+# Build and deploy to neopi / labelprinter
 run-vending: vending_arm64_screen
 	ssh bkg@neopi ./beforecopy.sh
 	scp vending_arm64_screen bkg@neopi:vending
@@ -70,8 +80,12 @@ run-darkroom: darkroom_arm64_screen
 run-doorlock: doorlock_arm64_screen
 	ssh bkg@neopi ./beforecopy.sh
 	scp doorlock_arm64_screen bkg@neopi:doorlock
- 
+
+run-labelprinter: labelprinter_arm
+	ssh bkg@labelprinter ./beforecopy.sh 2>/dev/null || true
+	scp labelprinter_arm bkg@labelprinter:/home/bkg/goratt/goratt
+
 clean:
-	rm -f vending_* doorlock_* darkroom_*
- 
+	rm -f vending_* doorlock_* darkroom_* labelprinter_*
+
 .PHONY: all x86 arm arm64 clean run $(SCREEN_TARGETS) $(NOSCREEN_TARGETS)
