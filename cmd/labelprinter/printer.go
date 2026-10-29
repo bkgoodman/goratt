@@ -91,11 +91,9 @@ func (p *Printer) openDevice() (*os.File, error) {
 func (p *Printer) exportbmpDymo(dc *gg.Context, file *os.File) error {
 	img := dc.Image()
 	bpl := dc.Height() / 8
-	lines := dc.Width()
 
 	header := []byte{
 		27, 0x44, byte(bpl), // Printer Width (Bytes)
-		27, 0x4c, byte((lines >> 8) & 0xff), byte(lines & 0xff), // Label line count
 	}
 	if _, err := file.Write(header); err != nil {
 		return fmt.Errorf("write dymo header: %w", err)
@@ -122,11 +120,12 @@ func (p *Printer) exportbmpDymo(dc *gg.Context, file *os.File) error {
 		}
 	}
 
-	// Form Feed
+	// Form Feed (ejects label to tear bar position)
 	if _, err := file.Write([]byte{27, 'E'}); err != nil {
 		return fmt.Errorf("write form feed: %w", err)
 	}
 
+	time.Sleep(100 * time.Millisecond)
 	return nil
 }
 
@@ -160,7 +159,7 @@ func (p *Printer) PrintStoragePass(member string) error {
 	dc.DrawStringAnchored(futureDateString, centerX, 180, 0.5, 0.5)
 
 	dc.SetFontFace(p.face(48))
-	dc.DrawStringAnchored("Temporary Storage Pass", centerX, 50, 0.5, 0.5)
+	//dc.DrawStringAnchored("Temporary Storage Pass", centerX, 50, 0.5, 0.5)
 	dc.DrawStringAnchored(strings.ReplaceAll(member, ".", " "), centerX, 120, 0.5, 0.5)
 
 	dc.SetFontFace(p.face(24))
@@ -291,7 +290,7 @@ func (p *Printer) PrintAruco(codeIndex int, member string) error {
 				}
 				fontSize -= 2
 			}
-			if ((lineHeight*float64(len(members))) + (verticalSpacing * float64(len(members)-1))) > maxTextHeight && fontSize > 8 {
+			if ((lineHeight*float64(len(members)))+(verticalSpacing*float64(len(members)-1))) > maxTextHeight && fontSize > 8 {
 				fontSize -= 2
 			}
 		}
