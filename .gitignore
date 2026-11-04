@@ -31,6 +31,6 @@ vending_arm64_screen
 api.py
 vendingerr.txt
 vendingerr2.txt
-vending
+/vending
 /labelprinter
 /labelprinter_*
