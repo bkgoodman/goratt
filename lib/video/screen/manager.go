@@ -94,9 +94,14 @@ type Manager struct {
 	playAudioBytesFn func(pcm []byte)
 
 	// Debounce state for rotary encoder combo moves
-	lastTurnTime       time.Time     // When the last turn occurred
-	lastTurnDelta      int           // Direction of the last turn
+	recentTurns        []recentTurn  // History of recent turns
 	turnPressThreshold time.Duration // Window for canceling accidental turns before a press
+	lastPressTime      time.Time     // When the last button press occurred
+}
+
+type recentTurn struct {
+	time  time.Time
+	delta int
 }
 
 // NewManager creates a new screen manager.
@@ -108,7 +113,7 @@ func NewManager(dc *gg.Context, width, height int, updateFn func()) *Manager {
 		updateFn:           updateFn,
 		screens:            make(map[ScreenID]Screen),
 		timers:             make(map[TimerID]*screenTimer),
-		turnPressThreshold: 150 * time.Millisecond,
+		turnPressThreshold: 100 * time.Millisecond,
 	}
 }
 
@@ -210,32 +215,67 @@ func (m *Manager) SendEvent(event Event) bool {
 	
 	// Handle rotary debounce state updates while under lock
 	var injectCompensatingTurn *Event
+	now := time.Now()
+
 	if event.Type == EventRotaryTurn {
+		// Ignore any turns that arrive immediately after a press (shaft spring-back wobble)
+		if !m.lastPressTime.IsZero() && time.Since(m.lastPressTime) < 150*time.Millisecond {
+			m.mu.Unlock()
+			return true
+		}
+
 		if rotary := event.Rotary(); rotary != nil {
-			m.lastTurnTime = time.Now()
-			m.lastTurnDelta = rotary.Delta
+			m.recentTurns = append(m.recentTurns, recentTurn{
+				time:  now,
+				delta: rotary.Delta,
+			})
+			// Prune entries older than 1 second to keep slice small
+			cutoff := now.Add(-1 * time.Second)
+			start := 0
+			for start < len(m.recentTurns) && m.recentTurns[start].time.Before(cutoff) {
+				start++
+			}
+			if start > 0 {
+				m.recentTurns = m.recentTurns[start:]
+			}
 		}
 	} else if event.Type == EventRotaryPress {
+		m.lastPressTime = now
 		if rotary := event.Rotary(); rotary != nil && m.turnPressThreshold > 0 {
 			pressTime := rotary.PressedAt
 			if pressTime.IsZero() {
-				pressTime = time.Now()
+				pressTime = now
 			}
-			diff := pressTime.Sub(m.lastTurnTime)
-			if diff < 0 {
-				diff = -diff
+
+			// Sum up all turns that occurred within turnPressThreshold before pressTime.
+			netDelta := 0
+			canceledCount := 0
+
+			var remainingTurns []recentTurn
+			for _, t := range m.recentTurns {
+				diff := pressTime.Sub(t.time)
+				// If turn happened within turnPressThreshold before pressTime
+				// (also accounting for slight clock jitter up to 20ms after pressTime)
+				if diff >= -20*time.Millisecond && diff <= m.turnPressThreshold {
+					netDelta += t.delta
+					canceledCount++
+				} else if t.time.Before(pressTime) {
+					// Older turn outside the window, discard
+				} else {
+					remainingTurns = append(remainingTurns, t)
+				}
 			}
-			if diff <= m.turnPressThreshold {
-				// User probably jiggled the knob while trying to press the button.
-				// Inject a synthetic reverse-turn to undo the accident.
-				log.Printf("Screen: Canceling accidental rotary turn (delta: %d) because press arrived within %v", m.lastTurnDelta, m.turnPressThreshold)
+			m.recentTurns = remainingTurns
+
+			if netDelta != 0 {
+				// User jiggled the knob while pressing the button.
+				// Inject a synthetic reverse-turn to undo all accidental movement in the window.
+				log.Printf("Screen: Canceling accidental rotary turns (net delta: %d across %d events) because press arrived within %v", netDelta, canceledCount, m.turnPressThreshold)
 				compEvent := Event{
 					Type: EventRotaryTurn,
-					Data: RotaryData{ID: rotary.ID, Delta: -m.lastTurnDelta},
+					Data: RotaryData{ID: rotary.ID, Delta: -netDelta},
 				}
 				injectCompensatingTurn = &compEvent
-				// Clear the time so we don't double-compensate
-				m.lastTurnTime = time.Time{}
 			}
 		}
 	}

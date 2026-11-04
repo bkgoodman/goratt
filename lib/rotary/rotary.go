@@ -32,6 +32,7 @@ type Rotary struct {
 	// Accessed by both pollButton goroutine and longPressTimer goroutine.
 	btnMu          sync.Mutex
 	btnPressTime   time.Time
+	btnReleaseTime time.Time
 	longPressTimer *time.Timer
 	longPressFired bool
 }
@@ -145,6 +146,18 @@ func (r *Rotary) pollRotary() {
 				if time.Since(r.lastTurnEventTime) < 5*time.Millisecond {
 					continue
 				}
+
+				// Suppress turns if button is physically depressed or was recently released.
+				// Pushing or releasing the shaft causes mechanical wobble on rotary contacts.
+				r.btnMu.Lock()
+				isPressed := !r.btnPressTime.IsZero()
+				recentRelease := !r.btnReleaseTime.IsZero() && time.Since(r.btnReleaseTime) < 150*time.Millisecond
+				r.btnMu.Unlock()
+
+				if isPressed || recentRelease || (r.btnPin != nil && r.btnPin.Read() == gpio.Low) {
+					continue
+				}
+
 				r.lastTurnEventTime = time.Now()
 
 				if dtLevel == gpio.Low {
@@ -248,6 +261,7 @@ func (r *Rotary) pollButton() {
 			longPressFired := r.longPressFired
 
 			r.btnPressTime = time.Time{}
+			r.btnReleaseTime = time.Now()
 			r.longPressFired = false
 			r.btnMu.Unlock()
 

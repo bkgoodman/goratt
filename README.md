@@ -1,28 +1,53 @@
 # GoRATT
 
-Go-based RATT client 
+Go-based RATT client suite supporting access control, vending, darkroom management, and label printing.
+
+## Applications
+
+- **Doorlock** (`cmd/doorlock`): Door access control with RFID badge reader, servo/GPIO strike, optional status LEDs, and framebuffer video display.
+- **Label Printer** (`cmd/labelprinter`): Dymo thermal label printer controller for member temporary storage passes, free table passes, and backend ArUco bin labels.
+- **Vending** (`cmd/vending`): Interactive vending machine controller with screen display and audio prompts.
+- **Darkroom** (`cmd/darkroom`): Darkroom timer and occupancy management with screen display.
 
 # Build
 
 1. Clone repo
-2. `make all` (or `go build`)
+2. Run `make` for target platform:
 
-For ARM (Raspberry Pi) builds:
-- 32-bit: `make goratt_arm`
-- 64-bit: `make goratt_arm64`
+```bash
+# Build everything
+make all
+
+# Architecture bundles
+make x86     # Build all binaries for x86_64
+make arm     # Build all binaries for ARM32 (Raspberry Pi OS 32-bit)
+make arm64   # Build all binaries for ARM64 (Raspberry Pi OS 64-bit)
+
+# Label Printer targets (headless)
+make labelprinter_x86
+make labelprinter_arm
+make labelprinter_arm64
+
+# Doorlock targets
+make doorlock_x86          # Headless doorlock
+make doorlock_arm
+make doorlock_arm64
+make doorlock_x86_screen   # Doorlock with framebuffer video display
+make doorlock_arm_screen
+make doorlock_arm64_screen
+
+# Vending & Darkroom targets (require screen support)
+make vending_x86_screen
+make vending_arm_screen
+make vending_arm64_screen
+make darkroom_x86_screen
+make darkroom_arm_screen
+make darkroom_arm64_screen
+```
 
 ## Screen Support
 
-To build with framebuffer video display support, use the screen targets:
-
-```
-make all-screen        # All platforms with screen support
-make goratt_x86_screen # x86 with screen
-make goratt_arm_screen # ARM32 with screen
-make goratt_arm64_screen # ARM64 with screen
-```
-
-Or manually: `go build -tags=screen`
+Vending and Darkroom always require screen support (`-tags=screen`). Doorlock can be built either headless or with screen support (`*_screen` targets). The Label Printer does not require screen support.
 
 # Configure
 
@@ -33,11 +58,22 @@ See configuration section below for details.
 
 # Run
 
-`./goratt`
+### Doorlock
+```bash
+./doorlock_arm -cfg goratt.cfg
+```
 
 Options:
 - `-cfg <file>` - Specify config file (default: `goratt.cfg`)
 - `-holdopen` - Hold door open indefinitely (for testing)
+
+### Label Printer
+```bash
+./labelprinter_arm -cfg goratt.cfg
+```
+
+Options:
+- `-cfg <file>` - Specify config file (default: `goratt.cfg`)
 
 # Configuration
 
@@ -143,6 +179,83 @@ reader:
 | `neopixel_pipe` | Path to named pipe for neopixel commands |
 
 All indicator settings are optional. Omit or set to null to disable.
+
+## Label Printer Settings (`labelprinter:`)
+
+The label printer service (`labelprinter`) interfaces with a Dymo USB label printer (e.g., LabelWriter 450) and a 2-button / 2-LED control pad to issue member labels. It also hosts an HTTP API for backend ArUco label print requests.
+
+### Configuration Options
+
+| Parameter | Description | Default |
+| --------- | ----------- | ------- |
+| `device` | Path to USB printer device | `/dev/usb/lp0` |
+| `http_port` | HTTP port for incoming backend print requests | `8080` |
+| `button1_pin` | GPIO pin for Button 1 (Free Table label, 8 days) | `18` |
+| `button2_pin` | GPIO pin for Button 2 (Storage Pass label, 3 days) | `25` |
+| `led1_pin` | GPIO pin for Button 1 LED | `23` |
+| `led2_pin` | GPIO pin for Button 2 LED | `24` |
+| `print_on_boot` | Print ready label (`- Ready -`) on startup | `true` |
+| `personality` | Personality topic name for MQTT status reporting | `storagepass` |
+
+Example configuration:
+
+```yaml
+labelprinter:
+  device: "/dev/usb/lp0"
+  http_port: 8080
+  button1_pin: 18
+  button2_pin: 25
+  led1_pin: 23
+  led2_pin: 24
+  print_on_boot: false
+  personality: "storagepass"
+```
+
+### Hardware Buttons & Flow
+
+The control pad uses two physical buttons (configured with internal pull-ups) and two LEDs:
+- **Button 1**: Free Table pass (8 days validity; "Items will be discarded after specified date")
+- **Button 2**: Temporary Storage pass (3 days validity; "Items may be discarded and disposal charges may be incurred...")
+
+Users can interact in either order:
+1. **Badge First, Then Select**:
+   - Tap an authorized RFID badge.
+   - The LEDs alternate blinking for up to 5 seconds.
+   - Press **Button 1** or **Button 2** to print the requested label with the member name and expiration date.
+2. **Select First, Then Badge**:
+   - Press **Button 1** or **Button 2**; the chosen button's LED illuminates.
+   - Tap an authorized RFID badge within 5 seconds to authenticate and print.
+
+If no action is completed within the 5-second window, the state times out and returns to idle. Printed passes are logged and published to MQTT under `ratt/status/node/<client_id>/personality/<personality>`.
+
+### HTTP ArUco Label Print API
+
+The service exposes an HTTP server on `http_port` (default `8080`) for printing ArUco bin labels from backends (such as `authbackend`):
+
+- **Health check**:
+  - `GET /health`
+  - Returns `{"status":"ok"}` with HTTP 200.
+- **Print ArUco label**:
+  - `POST /` or `POST /print_label`
+  - Content-Type: `application/x-www-form-urlencoded`
+  - Required Form Fields:
+    - `name`: Member name (e.g. `Jane Doe` or `Jane.Doe`)
+    - `number`: ArUco marker index (integer between 0 and 1023)
+  - Example:
+    ```bash
+    curl -X POST http://localhost:8080/ \
+      -d "name=Jane.Doe" \
+      -d "number=42"
+    ```
+  - Successful response:
+    ```json
+    {"status":"ok","member":"Jane.Doe","number":42}
+    ```
+  - Requests missing `name` or `number`, non-POST requests, or invalid indices are rejected with HTTP 4xx to prevent unintentional blank label printing.
+
+### Permissions & Device Access
+
+The user running `labelprinter` must have read/write access to the USB printer character device (usually `/dev/usb/lp0`, typically by adding the user to the `lp` group or running as `root`) and access to the GPIO character device (`/dev/gpiochip*`).
 
 ## Video Display Settings
 
@@ -283,6 +396,24 @@ Type=idle
 User=root
 Restart=always
 ExecStart=/home/bkg/rpi-neopixel-tool/neotool -p /home/bkg/ledpipe -x 7 -c
+RestartSec=15s
+
+[Install]
+WantedBy=multi-user.target
+```
+
+## Label Printer
+```ini
+[Unit]
+Description=GoRATT Label Printer Service
+After=network.target
+
+[Service]
+WorkingDirectory=/home/bkg
+Type=idle
+User=root
+Restart=always
+ExecStart=/home/bkg/goratt/labelprinter_arm -cfg /home/bkg/goratt/goratt.cfg
 RestartSec=15s
 
 [Install]
