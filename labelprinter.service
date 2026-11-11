@@ -1,6 +1,7 @@
 [Unit]
-Description=Storage Label Printer
-After=multi-user.target
+Description=My Go GPIO Application
+After=network.target local-fs.target systemd-udevd.service
+Wants=systemd-udevd.service
 
 [Service]
 WorkingDirectory=/home/bkg/goratt

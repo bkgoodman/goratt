@@ -58,6 +58,10 @@ See configuration section below for details.
 
 # Run
 
+## Prerequisites
+
+Make sure gpiod is installed and running (on any older distros that do not start this by default).
+
 ### Doorlock
 ```bash
 ./doorlock_arm -cfg goratt.cfg
@@ -371,6 +375,8 @@ When using both neopixels and the doorlock service, ensure proper startup orderi
 [Unit]
 Description=Doorlock RATT
 Requires=neopixel.service
+After=network.target local-fs.target systemd-udevd.service
+Wants=systemd-udevd.service
 
 [Service]
 WorkingDirectory=/home/bkg
@@ -388,7 +394,8 @@ WantedBy=multi-user.target
 ```
 [Unit]
 Description=Doorlock NeoPixel Service
-After=multi-user.target
+After=multi-user.target network.target local-fs.target systemd-udevd.service
+Wants=systemd-udevd.service
 
 [Service]
 WorkingDirectory=/home/bkg
@@ -406,7 +413,8 @@ WantedBy=multi-user.target
 ```ini
 [Unit]
 Description=GoRATT Label Printer Service
-After=network.target
+After=network.target local-fs.target systemd-udevd.service
+Wants=systemd-udevd.service
 
 [Service]
 WorkingDirectory=/home/bkg
