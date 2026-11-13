@@ -4,7 +4,10 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"os"
+	"strings"
+	"time"
 
 	"gopkg.in/yaml.v2"
 
@@ -73,7 +76,12 @@ func main() {
 	if cfg.LabelPrinter.PrintOnBoot != nil && *cfg.LabelPrinter.PrintOnBoot {
 		log.Println("PrintOnBoot is enabled; printing ready label")
 		go func() {
-			if err := printer.PrintStoragePass("- Ready -"); err != nil {
+			ip := getIPAddress()
+			for i := 0; ip == "" && i < 10; i++ {
+				time.Sleep(500 * time.Millisecond)
+				ip = getIPAddress()
+			}
+			if err := printer.PrintReady(ip); err != nil {
 				log.Printf("PrintOnBoot error: %v", err)
 			}
 		}()
@@ -120,4 +128,44 @@ func (a *LabelPrinterApp) OnMQTTConnect() {
 }
 
 func (a *LabelPrinterApp) OnMQTTMessage(topic string, payload []byte) {
+}
+
+// getIPAddress returns the IPv4 address of the primary network interface (wlan/eth/wl/en).
+func getIPAddress() string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		if !strings.HasPrefix(iface.Name, "wlan") &&
+			!strings.HasPrefix(iface.Name, "eth") &&
+			!strings.HasPrefix(iface.Name, "wl") &&
+			!strings.HasPrefix(iface.Name, "en") {
+			continue
+		}
+
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip == nil || ip.To4() == nil {
+				continue
+			}
+			return ip.String()
+		}
+	}
+	return ""
 }

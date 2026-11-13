@@ -183,6 +183,55 @@ func (p *Printer) PrintStoragePass(member string) error {
 	return p.exportbmpDymo(dc, file)
 }
 
+// PrintReady prints a startup ready label including the machine's IP address.
+func (p *Printer) PrintReady(ip string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	dc := gg.NewContext(labelWidthLines, labelHeightPx)
+	dc.SetRGB(1, 1, 1)
+	dc.Clear()
+	dc.SetRGB(0, 0, 0)
+
+	offset := float64(0)
+	if p.storageTemplate != nil {
+		dc.DrawImage(p.storageTemplate, 0, 0)
+		offset = 100
+	} else if p.milsmLogo != nil {
+		dc.DrawImage(p.milsmLogo, 20, 20)
+		offset = float64(p.milsmLogo.Bounds().Dx()) / 2.0
+	}
+
+	centerX := float64(labelWidthLines/2) + offset
+	formattedDateTime := time.Now().Format("Mon, 02-Jan-2006 01:04 PM")
+
+	dc.SetFontFace(p.face(48))
+	dc.DrawStringAnchored("- Ready -", centerX, 115, 0.5, 0.5)
+
+	ipText := ip
+	if ipText == "" {
+		ipText = "No IP"
+	}
+	dc.SetFontFace(p.face(64))
+	dc.DrawStringAnchored(ipText, centerX, 185, 0.5, 0.5)
+
+	dc.SetFontFace(p.face(24))
+	dc.DrawStringAnchored(fmt.Sprintf("Started: %s", formattedDateTime), centerX, 245, 0.5, 0.5)
+
+	dc.SetLineWidth(2)
+	dc.DrawRectangle(10, 10, float64(labelWidthLines-20), float64(labelHeightPx-20))
+	dc.Stroke()
+
+	file, err := p.openDevice()
+	if err != nil {
+		return fmt.Errorf("open printer %s: %w", p.device, err)
+	}
+	defer file.Close()
+
+	log.Printf("Printing Ready label (IP: %s)", ipText)
+	return p.exportbmpDymo(dc, file)
+}
+
 // PrintFreeTable prints an 8-day free table pass for the given member.
 func (p *Printer) PrintFreeTable(member string) error {
 	p.mu.Lock()
